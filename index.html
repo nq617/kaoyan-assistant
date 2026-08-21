@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="考研助手">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="description" content="考研学习计划助手：数学一 / 英语一 / 专业课 每日刷题量与学习时长管理">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+  <title>考研学习计划助手</title>
+</head>
+<body>
+  <div id="app">
+
+    <!-- ===== 顶栏 ===== -->
+    <header class="topbar">
+      <div class="brand">🎓 考研学习计划助手</div>
+      <div class="topbar-right">
+        <span id="todayText" class="today-text"></span>
+        <button id="btnTheme" class="icon-btn" title="切换深色模式">🌓</button>
+      </div>
+    </header>
+
+    <main class="main">
+
+      <!-- ===== 今日 ===== -->
+      <section id="page-today" class="page active">
+        <div class="card hero">
+          <div class="hero-left">
+            <div class="hero-count"><span id="countdownNum">--</span><span class="unit">天</span></div>
+            <div class="hero-sub">距离考研初试 · <span id="examDateText"></span></div>
+          </div>
+          <div class="hero-right">
+            <div class="phase-badge" id="phaseBadge">备考中</div>
+            <div class="hero-progress">
+              <div class="hero-progress-label">今日总进度 <span id="overallPct">0%</span></div>
+              <div class="progressbar"><div class="progressbar-fill" id="overallFill"></div></div>
+            </div>
+            <div class="streak-row">🔥 连续打卡 <b id="streakDays">0</b> 天 · 累计 <b id="totalCheckins">0</b> 天</div>
+          </div>
+        </div>
+
+        <div id="subjectCards"></div>
+
+        <div class="card note-card">
+          <div class="card-title">📝 今日小结</div>
+          <textarea id="noteInput" placeholder="记录今天的学习情况、心得、明日安排……"></textarea>
+        </div>
+
+        <div class="card quote-card">
+          <div class="quote-mark">💬</div>
+          <div id="quoteText" class="quote-text"></div>
+        </div>
+      </section>
+
+      <!-- ===== 专注 ===== -->
+      <section id="page-focus" class="page">
+        <div class="card focus-card">
+          <div class="card-title center">🍅 番茄专注</div>
+          <div class="subject-chips" id="pomoSubjectChips"></div>
+          <div class="pomo-wrap">
+            <svg class="pomo-ring" viewBox="0 0 260 260">
+              <circle class="pomo-ring-bg" cx="130" cy="130" r="118"></circle>
+              <circle class="pomo-ring-fill" id="pomoRing" cx="130" cy="130" r="118"></circle>
+            </svg>
+            <div class="pomo-center">
+              <div class="pomo-time" id="pomoTime">25:00</div>
+              <div class="pomo-mode" id="pomoModeText">专注</div>
+            </div>
+          </div>
+          <div class="pomo-controls">
+            <button class="btn btn-ghost" data-action="pomoReset" title="重置">↺ 重置</button>
+            <button class="btn btn-primary btn-big" id="pomoToggle" data-action="pomoToggle">▶ 开始</button>
+            <button class="btn btn-ghost" data-action="pomoSkip" title="跳过本阶段">⏭ 跳过</button>
+          </div>
+          <div class="pomo-stats">
+            今日已完成 <b id="pomoFocusToday">0</b> 个番茄
+            <span class="pomo-hint" id="pomoHint"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">⏱ 单科计时</div>
+          <p class="hint-text">在「今日」页每科卡片上点「开始计时」，专注时长会自动累计到该科今天的学习时间。</p>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🍅 番茄钟设置</div>
+          <div class="form-grid">
+            <label class="field">专注时长(分)
+              <input type="number" id="set-pomo-focus" min="5" max="120" value="25">
+            </label>
+            <label class="field">短休息(分)
+              <input type="number" id="set-pomo-short" min="1" max="60" value="5">
+            </label>
+            <label class="field">长休息(分)
+              <input type="number" id="set-pomo-long" min="5" max="90" value="15">
+            </label>
+            <label class="field">几个番茄后长休息
+              <input type="number" id="set-pomo-longevery" min="1" max="10" value="4">
+            </label>
+          </div>
+          <label class="switch-row">
+            <input type="checkbox" id="set-pomo-auto" checked>
+            <span>专注结束后自动开始休息</span>
+          </label>
+        </div>
+      </section>
+
+      <!-- ===== 统计 ===== -->
+      <section id="page-stats" class="page">
+        <div class="range-toggle">
+          <button data-range="7" class="active">近 7 天</button>
+          <button data-range="30">近 30 天</button>
+        </div>
+
+        <div class="stat-cards">
+          <div class="card stat-card">
+            <div class="stat-num" id="statTotalProblems">0</div>
+            <div class="stat-label">累计做题(题)</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-num" id="statTotalTime">0</div>
+            <div class="stat-label">累计时长(小时)</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-num" id="statAvgTime">0</div>
+            <div class="stat-label">日均时长(小时)</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-num" id="statBestStreak">0</div>
+            <div class="stat-label">最长连击(天)</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">📈 各科日均</div>
+          <div id="statSubjectRows"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">📊 每日做题数</div>
+          <canvas id="chartProblems" height="220"></canvas>
+          <div class="legend" id="legendProblems"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">⏰ 每日学习时长</div>
+          <canvas id="chartTime" height="220"></canvas>
+          <div class="legend" id="legendTime"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title row-between">
+            <span>🗓 打卡日历</span>
+            <span class="cal-nav">
+              <button class="icon-btn" data-action="calPrev">◀</button>
+              <b id="calTitle"></b>
+              <button class="icon-btn" data-action="calNext">▶</button>
+            </span>
+          </div>
+          <div class="cal-week">一 二 三 四 五 六 日</div>
+          <div id="calGrid" class="cal-grid"></div>
+          <div class="cal-legend">
+            <span><i style="background:var(--card2)"></i>0%</span>
+            <span><i style="background:#c7d2fe"></i>&lt;50%</span>
+            <span><i style="background:#818cf8"></i>50–100%</span>
+            <span><i style="background:#4f46e5"></i>≥100%</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 错题 ===== -->
+      <section id="page-mistakes" class="page">
+        <div class="card">
+          <div class="card-title">📕 记录错题</div>
+          <form id="mistakeForm" class="mistake-form">
+            <div class="form-grid">
+              <label class="field">科目
+                <select id="mistakeSubject"></select>
+              </label>
+              <label class="field">错误类型
+                <select id="mistakeTag">
+                  <option>粗心大意</option>
+                  <option>概念不清</option>
+                  <option>方法不会</option>
+                  <option>计算错误</option>
+                  <option>其他</option>
+                </select>
+              </label>
+            </div>
+            <label class="field">来源（书/卷/章节，选填）
+              <input type="text" id="mistakeSource" placeholder="如：660题 P23 / 2019年真题">
+            </label>
+            <label class="field">题目要点 / 错误原因
+              <textarea id="mistakeContent" rows="2" placeholder="简要记录这道题的知识点或错误原因，方便复习"></textarea>
+            </label>
+            <button type="submit" class="btn btn-primary btn-block">＋ 加入错题本</button>
+          </form>
+        </div>
+
+        <div class="mistake-filters" id="mistakeFilters"></div>
+        <div id="mistakeList"></div>
+      </section>
+
+      <!-- ===== 院校信息 ===== -->
+      <section id="page-schools" class="page">
+        <div class="card">
+          <div class="card-title">🔍 查询院校考试信息</div>
+          <p class="hint-text">输入院校或专业名称，直接搜索该校官网发布的招生简章、专业目录、考试大纲、复试分数线等信息（电脑端体验最佳，搜索结果请认准 edu.cn / ac.cn 官网域名）。</p>
+          <div class="school-search-row">
+            <input type="text" id="schoolSearch" placeholder="如：清华大学 / 计算机 / 金融">
+            <button class="btn btn-primary" id="btnSchoolBaidu">百度搜索</button>
+            <button class="btn btn-ghost" id="btnSchoolBing">必应搜索</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🏛️ 权威入口</div>
+          <div class="link-grid" id="officialLinks"></div>
+          <div class="sub-title">省级教育考试院（报考、网上确认、查分）</div>
+          <div class="link-grid" id="provinceLinks"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🗓️ 考试信息时间轴（按你设置的考试日期推算）</div>
+          <div id="examTimeline"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🎯 热门院校官方研招网</div>
+          <input type="text" id="schoolFilterInput" class="school-filter-input" placeholder="在列表中筛选院校，如：北京 / 计算机类">
+          <div class="mistake-filters" id="schoolFilters"></div>
+          <div id="schoolList"></div>
+          <p class="hint-text">列表未收录的院校：用上方搜索框，或前往「研招网·院校库」查询全部招生单位。</p>
+        </div>
+      </section>
+
+      <!-- ===== 设置 ===== -->
+      <section id="page-settings" class="page">
+        <div class="card">
+          <div class="card-title">🎯 计划设置</div>
+          <label class="field">考研初试日期
+            <input type="date" id="set-exam-date">
+          </label>
+          <div class="subject-settings" id="subjectSettings"></div>
+          <button class="btn btn-gradient btn-block" id="btn-smart">✨ 一键智能规划（按剩余天数推荐）</button>
+          <p class="hint-text" id="smartHint"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🔔 每日提醒</div>
+          <label class="switch-row">
+            <input type="checkbox" id="set-remind-on">
+            <span>每天提醒我打卡</span>
+          </label>
+          <div class="remind-row">
+            <label class="field">提醒时间
+              <input type="time" id="set-remind-time" value="21:30">
+            </label>
+            <button class="btn btn-ghost" id="btn-notif-perm">开启系统通知权限</button>
+          </div>
+          <p class="hint-text">应用打开时会在设定时间弹出提醒；Chrome/Android 支持定时系统通知（iOS 暂不支持定时通知，需保持应用打开）。</p>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🎨 外观</div>
+          <label class="field">主题模式
+            <select id="set-theme">
+              <option value="auto">跟随系统</option>
+              <option value="light">浅色</option>
+              <option value="dark">深色</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="card">
+          <div class="card-title">💾 数据管理</div>
+          <p class="hint-text">所有数据仅保存在这台设备的浏览器里，不会上传到任何服务器。换设备时请先导出备份。</p>
+          <div class="btn-row">
+            <button class="btn btn-ghost" id="btn-export">导出备份(JSON)</button>
+            <button class="btn btn-ghost" id="btn-csv">导出报表(CSV)</button>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-ghost" id="btn-import">导入备份</button>
+            <button class="btn btn-danger" id="btn-clear">清空全部数据</button>
+          </div>
+          <input type="file" id="file-import" accept=".json,application/json" style="display:none">
+        </div>
+
+        <div class="card about-card">
+          <div class="card-title">ℹ️ 关于</div>
+          <p>考研学习计划助手 v1.0 · 纯本地运行，离线可用。</p>
+          <p>科目：数学一 / 英语一 / 专业课 · 功能：每日任务、番茄钟、统计图表、打卡日历、错题本、智能规划、数据备份。</p>
+          <p>💡 在 iPad 上使用：用 Safari 打开本应用 → 点右上角「分享」→「添加到主屏幕」，即可像 App 一样全屏使用。</p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ===== 底部导航 ===== -->
+    <nav class="tabbar">
+      <button class="tab active" data-tab="today"><span class="tab-icon">📅</span><span>今日</span></button>
+      <button class="tab" data-tab="focus"><span class="tab-icon">🍅</span><span>专注</span></button>
+      <button class="tab" data-tab="stats"><span class="tab-icon">📊</span><span>统计</span></button>
+      <button class="tab" data-tab="mistakes"><span class="tab-icon">📕</span><span>错题</span></button>
+      <button class="tab" data-tab="schools"><span class="tab-icon">🏫</span><span>院校</span></button>
+      <button class="tab" data-tab="settings"><span class="tab-icon">⚙️</span><span>设置</span></button>
+    </nav>
+  </div>
+
+  <!-- ===== 弹窗 ===== -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-title" id="modalTitle"></div>
+      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-btns">
+        <button class="btn btn-ghost" id="modalCancel">取消</button>
+        <button class="btn btn-primary" id="modalOk">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="schools-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
