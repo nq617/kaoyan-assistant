@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AI助手">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="description" content="手机版 AI 助手：基于 DeepSeek API 的移动端聊天应用">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+  <title>我的 AI 助手</title>
+</head>
+<body>
+  <div id="app">
+
+    <!-- ===== 顶栏 ===== -->
+    <header class="topbar">
+      <button class="icon-btn" id="btnNewChat" title="新建对话">＋</button>
+      <div class="brand" id="brandTitle">💬 我的 AI 助手</div>
+      <button class="icon-btn" id="btnSettings" title="设置">⚙️</button>
+    </header>
+    <div class="model-badge-wrap">
+      <button class="model-badge" id="modelBadge">未连接</button>
+    </div>
+
+    <!-- ===== 消息区 ===== -->
+    <main id="messages" class="messages"></main>
+
+    <!-- ===== 输入栏 ===== -->
+    <div class="composer">
+      <textarea id="input" rows="1" placeholder="和 AI 助手聊天…"></textarea>
+      <button class="send-btn" id="sendBtn" title="发送">➤</button>
+    </div>
+
+    <!-- ===== 设置面板 ===== -->
+    <div id="settingsPanel" class="settings-panel hidden">
+      <div class="sp-head">
+        <div class="sp-title">⚙️ 设置</div>
+        <button class="icon-btn" id="btnCloseSettings">✕</button>
+      </div>
+      <div class="sp-body">
+
+        <div class="sp-section">
+          <div class="sp-label">🔑 API 密钥（只保存在本机浏览器）</div>
+          <div class="key-row">
+            <input type="password" id="setKey" placeholder="sk-…">
+            <button class="icon-btn" id="btnToggleKey" title="显示/隐藏">👁</button>
+          </div>
+          <p class="sp-hint">还没有密钥？去 <a href="https://platform.deepseek.com" target="_blank" rel="noopener">platform.deepseek.com</a> 注册 → 创建 API Key → 充值几块钱即可（按量计费，很便宜）。密钥只保存在你手机本地，不会上传到任何地方。</p>
+        </div>
+
+        <div class="sp-section">
+          <div class="sp-label">🧠 模型</div>
+          <label class="field">
+            <select id="setModel">
+              <option value="deepseek-chat">deepseek-chat（快速对话）</option>
+              <option value="deepseek-reasoner">deepseek-reasoner（深度思考）</option>
+              <option value="custom">自定义模型名…</option>
+            </select>
+          </label>
+          <label class="field hidden" id="customModelField">自定义模型名
+            <input type="text" id="setCustomModel" placeholder="如 deepseek-chat">
+          </label>
+        </div>
+
+        <div class="sp-section">
+          <div class="sp-label">🎭 角色预设</div>
+          <label class="field">
+            <select id="setPersona">
+              <option value="general">通用助手</option>
+              <option value="kaoyan">🎓 考研陪跑助手</option>
+              <option value="custom">自定义人设…</option>
+            </select>
+          </label>
+          <label class="field hidden" id="customPromptField">自定义人设（System Prompt）
+            <textarea id="setCustomPrompt" rows="4" placeholder="例如：你是一位耐心的数学老师…"></textarea>
+          </label>
+        </div>
+
+        <div class="sp-section">
+          <div class="sp-label">🎚️ 参数</div>
+          <div class="param-row">
+            <span>随机性(温度)</span>
+            <input type="range" id="setTemp" min="0" max="2" step="0.1" value="1.0">
+            <b id="tempVal">1.0</b>
+          </div>
+        </div>
+
+        <div class="sp-section">
+          <div class="sp-label">🎨 外观</div>
+          <label class="field">
+            <select id="setTheme">
+              <option value="auto">跟随系统</option>
+              <option value="light">浅色</option>
+              <option value="dark">深色</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="sp-section">
+          <div class="sp-label">💾 数据管理</div>
+          <div class="btn-row">
+            <button class="btn btn-ghost" id="btnExportChat">导出对话(JSON)</button>
+            <button class="btn btn-ghost" id="btnImportChat">导入对话</button>
+          </div>
+          <input type="file" id="fileImport" accept=".json,application/json" style="display:none">
+          <p class="sp-hint">对话记录保存在本机浏览器。清除浏览器数据会丢失，重要对话请先导出。</p>
+        </div>
+
+        <div class="sp-section">
+          <div class="sp-label">ℹ️ 关于</div>
+          <p class="sp-hint">本应用直接调用 DeepSeek 官方 API（api.deepseek.com），密钥和对话数据都只保存在你的设备上。支持流式输出、深度思考、Markdown、代码高亮。建议用 Safari 打开后「添加到主屏幕」像 App 一样使用。</p>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js" onerror="var s=document.createElement('script');s.src='https://fastly.jsdelivr.net/npm/marked@12/marked.min.js';document.head.appendChild(s);"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js" onerror="var s=document.createElement('script');s.src='https://fastly.jsdelivr.net/npm/dompurify@3/dist/purify.min.js';document.head.appendChild(s);"></script>
+  <script src="app.js"></script>
+</body>
+</html>
