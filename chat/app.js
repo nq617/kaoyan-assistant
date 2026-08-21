@@ -552,6 +552,9 @@ function init() {
   renderAll();
   updateBadge();
   bindEvents();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function () { /* 静默 */ });
+  }
   if (!getKey()) {
     setTimeout(function () { openSettings(); }, 600);
   }

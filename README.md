@@ -1,5 +1,7 @@
 # 🎓 考研学习计划助手
 
+> 📱 附赠：**手机版 AI 助手**（DeepSeek 对话应用）→ https://nq617.github.io/kaoyan-assistant/chat/ （需在 platform.deepseek.com 注册并配置自己的 API Key，密钥仅存本机）
+
 一个专为 **iPad（苹果设备）** 设计的考研学习计划助手，管理 **数学一 / 英语一 / 专业课** 三科的每日刷题量和学习时长，功能完善、离线可用、数据只存在你自己的设备上。
 
 ## ✨ 功能清单
