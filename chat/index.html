@@ -94,6 +94,21 @@
         </div>
 
         <div class="sp-section">
+          <div class="sp-label">💰 计费价格（元 / 每百万 tokens）</div>
+          <label class="field">输入价格
+            <input type="number" id="setPriceInput" step="0.01" min="0" placeholder="如 2">
+          </label>
+          <label class="field">输出价格
+            <input type="number" id="setPriceOutput" step="0.01" min="0" placeholder="如 8">
+          </label>
+          <label class="field">缓存命中价格
+            <input type="number" id="setPriceCache" step="0.01" min="0" placeholder="如 0.5">
+          </label>
+          <button class="btn btn-ghost btn-block" id="btnPricePreset">按所选模型填充官方参考价</button>
+          <p class="sp-hint">参考价（可能随官方调整，以 platform.deepseek.com 实际标价为准）：deepseek-chat 输入 ¥2 / 缓存命中 ¥0.5 / 输出 ¥8；deepseek-reasoner 输入 ¥4 / 缓存命中 ¥1 / 输出 ¥16。价格全填 0 则不显示费用。</p>
+        </div>
+
+        <div class="sp-section">
           <div class="sp-label">🎨 外观</div>
           <label class="field">
             <select id="setTheme">

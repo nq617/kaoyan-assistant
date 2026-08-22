@@ -22,7 +22,15 @@ var DEFAULT_SETTINGS = {
   temperature: 1.0,
   persona: 'general',
   customPrompt: '',
-  theme: 'auto'
+  theme: 'auto',
+  priceInput: 2,
+  priceOutput: 8,
+  priceCacheHit: 0.5
+};
+
+var PRICE_PRESETS = {
+  'deepseek-chat': { input: 2, output: 8, cacheHit: 0.5 },
+  'deepseek-reasoner': { input: 4, output: 16, cacheHit: 1 }
 };
 
 /* ============ 状态 ============ */
@@ -146,9 +154,15 @@ function messageHTML(m, i) {
     : '<div class="bubble">' + think + renderMarkdown(m.content) + (m.streaming ? '<span class="cursor"></span>' : '') + '</div>';
   var usageMeta = '';
   if (m.usage && m.usage.total) {
+    var costPart = '';
+    if (hasPricing()) {
+      var c = msgCost(m);
+      if (c > 0) costPart = ' · ' + fmtCost(c);
+    }
     usageMeta = '<span class="usage-meta" title="输入 ' + fmtNum(m.usage.prompt) +
       ' · 输出 ' + fmtNum(m.usage.completion) +
-      ' · 缓存命中 ' + fmtNum(m.usage.cacheHit) + '">💠 ' + fmtNum(m.usage.total) + ' tokens</span>';
+      ' · 缓存命中 ' + fmtNum(m.usage.cacheHit) +
+      (costPart ? ' · 费用 ' + fmtCost(msgCost(m)) : '') + '">💠 ' + fmtNum(m.usage.total) + ' tokens' + costPart + '</span>';
   }
   var actions = m.streaming ? '' :
     '<div class="msg-actions">' +
@@ -422,6 +436,9 @@ function fillSettingsForm() {
   $('setTemp').value = settings.temperature;
   $('tempVal').textContent = parseFloat(settings.temperature).toFixed(1);
   $('setTheme').value = settings.theme;
+  $('setPriceInput').value = settings.priceInput;
+  $('setPriceOutput').value = settings.priceOutput;
+  $('setPriceCache').value = settings.priceCacheHit;
 }
 
 /* ============ 主题 ============ */
@@ -489,8 +506,37 @@ function sessionUsage() {
 function updateUsageBadge() {
   var el = $('usageTotal');
   var t = sessionUsage();
-  el.textContent = '💠 ' + fmtNum(t) + ' tokens';
+  var text = '💠 ' + fmtNum(t) + ' tokens';
+  if (hasPricing()) {
+    var c = sessionCost();
+    if (c > 0) text += ' · ' + fmtCost(c);
+  }
+  el.textContent = text;
   el.classList.toggle('show', t > 0);
+}
+
+/* ============ 费用估算 ============ */
+function hasPricing() {
+  return (parseFloat(settings.priceInput) > 0 || parseFloat(settings.priceOutput) > 0);
+}
+function msgCost(m) {
+  if (!hasPricing() || !m.usage || !m.usage.total) return 0;
+  var cacheHit = m.usage.cacheHit || 0;
+  var inputRest = Math.max(0, (m.usage.prompt || 0) - cacheHit);
+  var cost = (inputRest * parseFloat(settings.priceInput || 0)
+    + cacheHit * parseFloat(settings.priceCacheHit || 0)
+    + (m.usage.completion || 0) * parseFloat(settings.priceOutput || 0)) / 1000000;
+  return cost;
+}
+function sessionCost() {
+  var total = 0;
+  for (var i = 0; i < messages.length; i++) total += msgCost(messages[i]);
+  return total;
+}
+function fmtCost(c) {
+  if (c == null || !isFinite(c)) return '';
+  if (c > 0 && c < 0.01) return '¥' + c.toFixed(4);
+  return '¥' + c.toFixed(2);
 }
 
 /* ============ 事件绑定 ============ */
@@ -565,6 +611,32 @@ function bindEvents() {
     settings.theme = this.value;
     saveSettings();
     applyTheme();
+  });
+  $('setPriceInput').addEventListener('change', function () {
+    settings.priceInput = parseFloat(this.value) || 0;
+    saveSettings();
+    renderAll();
+  });
+  $('setPriceOutput').addEventListener('change', function () {
+    settings.priceOutput = parseFloat(this.value) || 0;
+    saveSettings();
+    renderAll();
+  });
+  $('setPriceCache').addEventListener('change', function () {
+    settings.priceCacheHit = parseFloat(this.value) || 0;
+    saveSettings();
+    renderAll();
+  });
+  $('btnPricePreset').addEventListener('click', function () {
+    var preset = PRICE_PRESETS[settings.model === 'custom' ? 'deepseek-chat' : settings.model];
+    if (!preset) { toast('自定义模型请手动填写价格'); return; }
+    settings.priceInput = preset.input;
+    settings.priceOutput = preset.output;
+    settings.priceCacheHit = preset.cacheHit;
+    saveSettings();
+    fillSettingsForm();
+    renderAll();
+    toast('✅ 已按 ' + effectiveModel() + ' 填充参考价');
   });
   $('btnExportChat').addEventListener('click', exportChat);
   $('btnImportChat').addEventListener('click', function () { $('fileImport').click(); });
