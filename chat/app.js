@@ -81,6 +81,9 @@ function nowTime() {
   var d = new Date();
   return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
 }
+function fmtNum(n) {
+  return String(n == null ? 0 : n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
 function effectiveModel() {
   return settings.model === 'custom' ? (settings.customModel.trim() || 'deepseek-chat') : settings.model;
 }
@@ -107,11 +110,13 @@ function renderAll() {
   if (!messages.length) {
     box.innerHTML = welcomeHTML();
     nearBottom = true;
+    updateUsageBadge();
     return;
   }
   var html = messages.map(function (m, i) { return messageHTML(m, i); }).join('');
   box.innerHTML = html;
   scrollToBottom(true);
+  updateUsageBadge();
 }
 
 function welcomeHTML() {
@@ -139,6 +144,12 @@ function messageHTML(m, i) {
   var cls = 'msg ai' + (isErr ? ' error' : '');
   var body = isErr ? '<div class="bubble">' + esc(m.content) + '</div>'
     : '<div class="bubble">' + think + renderMarkdown(m.content) + (m.streaming ? '<span class="cursor"></span>' : '') + '</div>';
+  var usageMeta = '';
+  if (m.usage && m.usage.total) {
+    usageMeta = '<span class="usage-meta" title="输入 ' + fmtNum(m.usage.prompt) +
+      ' · 输出 ' + fmtNum(m.usage.completion) +
+      ' · 缓存命中 ' + fmtNum(m.usage.cacheHit) + '">💠 ' + fmtNum(m.usage.total) + ' tokens</span>';
+  }
   var actions = m.streaming ? '' :
     '<div class="msg-actions">' +
       '<button class="mini-btn" data-act="copy" data-idx="' + i + '">📋 复制</button>' +
@@ -146,7 +157,7 @@ function messageHTML(m, i) {
       '<button class="mini-btn" data-act="del" data-idx="' + i + '">🗑 删除</button>' +
     '</div>';
   return '<div class="msg ' + cls + '" data-idx="' + i + '">' + body + actions +
-    '<div class="msg-meta"><span>' + esc(m.model || '') + '</span><span>' + esc(m.time || '') + '</span></div>' +
+    '<div class="msg-meta">' + usageMeta + '<span>' + esc(m.model || '') + '</span><span>' + esc(m.time || '') + '</span></div>' +
     '</div>';
 }
 
@@ -219,6 +230,7 @@ function streamChat(key, userText) {
     model: effectiveModel(),
     messages: apiMessages,
     stream: true,
+    stream_options: { include_usage: true },
     temperature: parseFloat(settings.temperature) || 1.0
   };
 
@@ -251,6 +263,15 @@ function streamChat(key, userText) {
           var json;
           try { json = JSON.parse(payload); } catch (e) { continue; }
           var choice = json.choices && json.choices[0];
+          if (json.usage && json.usage.total_tokens != null) {
+            last.usage = {
+              prompt: json.usage.prompt_tokens || 0,
+              completion: json.usage.completion_tokens || 0,
+              total: json.usage.total_tokens || 0,
+              cacheHit: json.usage.prompt_cache_hit_tokens || 0,
+              cacheMiss: json.usage.prompt_cache_miss_tokens || 0
+            };
+          }
           if (choice && choice.delta) {
             if (choice.delta.reasoning_content) {
               last.reasoning += choice.delta.reasoning_content;
@@ -272,6 +293,7 @@ function streamChat(key, userText) {
       saveMessages();
       setStreaming(false);
       updateLastMessage();
+      updateUsageBadge();
       try { reader.cancel(); } catch (e) { /* 忽略 */ }
     }
     return pump();
@@ -314,6 +336,7 @@ function stopStream() {
   saveMessages();
   setStreaming(false);
   updateLastMessage();
+  updateUsageBadge();
 }
 
 function setStreaming(v) {
@@ -452,6 +475,22 @@ function updateBadge() {
   var b = $('modelBadge');
   b.textContent = hasKey ? effectiveModel() : '未连接';
   b.classList.toggle('connected', hasKey);
+}
+
+/* 本次会话累计 token 消耗 */
+function sessionUsage() {
+  var total = 0;
+  for (var i = 0; i < messages.length; i++) {
+    var m = messages[i];
+    if (m.usage && m.usage.total) total += m.usage.total;
+  }
+  return total;
+}
+function updateUsageBadge() {
+  var el = $('usageTotal');
+  var t = sessionUsage();
+  el.textContent = '💠 ' + fmtNum(t) + ' tokens';
+  el.classList.toggle('show', t > 0);
 }
 
 /* ============ 事件绑定 ============ */
