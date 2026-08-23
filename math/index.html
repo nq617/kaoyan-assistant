@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="数一刷题">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="description" content="考研数学一刷题助手：按真题/模拟规则与分值表自动出卷">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+  <title>考研数学一 · 刷题助手</title>
+</head>
+<body>
+  <div id="app">
+
+    <header class="topbar">
+      <div class="brand">🧮 数一刷题助手</div>
+      <div class="topbar-right">
+        <span class="stat-chip">已做题 <b id="statTotal">0</b></span>
+        <span class="stat-chip">正确率 <b id="statRate">—</b></span>
+      </div>
+    </header>
+
+    <main id="view" class="main"></main>
+
+    <nav class="tabbar">
+      <button class="tab active" data-tab="math"><span class="tab-icon">📐</span><span>数学</span></button>
+      <button class="tab" data-tab="english"><span class="tab-icon">🇬🇧</span><span>英语</span></button>
+      <button class="tab" data-tab="major"><span class="tab-icon">📚</span><span>专业课</span></button>
+      <button class="tab" data-tab="wrong"><span class="tab-icon">⭐</span><span>错题</span></button>
+    </nav>
+
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <script src="bank-gaoshu.js"></script>
+  <script src="bank-lineart.js"></script>
+  <script src="bank-prob.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
