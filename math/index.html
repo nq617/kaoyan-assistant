@@ -14,6 +14,7 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css" onerror="var l=document.createElement('link');l.rel='stylesheet';l.href='https://fastly.jsdelivr.net/npm/katex@0.16/dist/katex.min.css';document.head.appendChild(l);">
   <title>考研数学一 · 刷题助手</title>
 </head>
 <body>
@@ -39,9 +40,32 @@
   </div>
   <div id="toast" class="toast"></div>
 
-  <script src="bank-gaoshu.js"></script>
-  <script src="bank-lineart.js"></script>
-  <script src="bank-prob.js"></script>
+  <!-- 设置弹窗 -->
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="sp-head">
+        <div class="sp-title">⚙️ 设置</div>
+        <button class="icon-btn" id="btnCloseSettings">✕</button>
+      </div>
+      <div class="sp-section">
+        <div class="sp-label">🔑 DeepSeek API Key（用于「💡 思路提示」的 AI 个性化思路）</div>
+        <input type="password" id="setKey" placeholder="sk-…">
+        <p class="sp-hint">密钥只保存在本机浏览器，与「AI 助手」应用共用。没有密钥时，思路提示会自动降级为章节通用思路。注册地址：<a href="https://platform.deepseek.com" target="_blank" rel="noopener">platform.deepseek.com</a></p>
+      </div>
+      <div class="sp-section">
+        <div class="sp-label">🧠 提示模型</div>
+        <select id="setHintModel">
+          <option value="deepseek-chat">deepseek-chat（快、省）</option>
+          <option value="deepseek-reasoner">deepseek-reasoner（更深）</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-block" id="btnSaveSettings">💾 保存</button>
+    </div>
+  </div>
+
+  <script src="chapters.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js" onerror="var s=document.createElement('script');s.src='https://fastly.jsdelivr.net/npm/katex@0.16/dist/katex.min.js';document.head.appendChild(s);"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/contrib/auto-render.min.js" onerror="var s=document.createElement('script');s.src='https://fastly.jsdelivr.net/npm/katex@0.16/dist/contrib/auto-render.min.js';document.head.appendChild(s);"></script>
   <script src="app.js"></script>
 </body>
 </html>

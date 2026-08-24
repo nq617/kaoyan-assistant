@@ -1,13 +1,11 @@
 /* 数一刷题助手 - Service Worker：离线外壳 */
-var CACHE = 's1math-v1';
+var CACHE = 's1math-v2';
 var ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
-  './bank-gaoshu.js',
-  './bank-lineart.js',
-  './bank-prob.js',
+  './chapters.js',
   './manifest.webmanifest',
   './icons/icon-180.png',
   './icons/icon-192.png',

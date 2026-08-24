@@ -1,66 +1,58 @@
 'use strict';
 
 /* ================================================================
-   考研数学一 · 刷题助手
-   出卷规则（按用户要求 + D:\ai 分值表）：
-   - 微分方程之前的章节：100% 真题
-   - 微分方程及之后 + 线代 + 概率：约 8 成真题 + 2 成模拟（只取最有价值的模拟题）
-   - 二重积分：不出现在卷子里，仅保留 ≤10 道参考题
-   - 分值权重参考 2021-2026 历年平均：高数上 40.3 / 高数下 45.7 / 线代 32 / 概率 32
+   考研数学一 · 刷题助手 v2
+   题库来源：大观园 cxyonly.fans（数一真题 + 高价值模拟题）
+   规则：微分方程前 100% 真题；之后+线代+概率 ≈8成真题2成模拟
+   分值权重：高数上40.3 / 高数下45.7 / 线代32 / 概率32（2021-2026平均）
+   功能：每日卷子、全卷150分、章节刷题、错题本、AI思路提示
 ================================================================ */
 
 var LS_PROGRESS = 's1_progress';
 var LS_HISTORY = 's1_history';
+var LS_HINTS = 's1_hints';
+var API_BASE = 'https://api.deepseek.com';
 
-/* ============ 题库合并 ============ */
-var CHAPTERS = [];
-var QUESTIONS = [];
-var REF_CHAPTER = null;
-
-function loadBank() {
-  CHAPTERS = [];
-  QUESTIONS = [];
-  [window.MATH_GAOSHU, window.MATH_XIANDAI, window.MATH_GAILV].forEach(function (bank) {
-    if (!bank) return;
-    bank.chapters.forEach(function (c) {
-      if (c.ref) REF_CHAPTER = c;
-      CHAPTERS.push(c);
-    });
-    bank.questions.forEach(function (q) { QUESTIONS.push(q); });
-  });
-}
+/* ============ 章节 ============ */
+var CHAPTERS = window.MATH_CHAPTERS || [];
 function chapterById(id) {
   for (var i = 0; i < CHAPTERS.length; i++) if (CHAPTERS[i].id === id) return CHAPTERS[i];
   return null;
 }
-function byCh(id) {
-  return QUESTIONS.filter(function (q) { return q.ch === id; });
-}
-function activeChapters() {
-  return CHAPTERS.filter(function (c) { return !c.ref; });
+function activeChapters() { return CHAPTERS.filter(function (c) { return !c.ref; }); }
+
+/* ============ 题库懒加载 ============ */
+function dataKey(ch) { return 'MATH_DATA_' + ch.toUpperCase().replace(/-/g, '_'); }
+function isLoaded(ch) { return !!window[dataKey(ch)]; }
+function byCh(ch) { return window[dataKey(ch)] || []; }
+function loadChapterFiles(ids) {
+  var todo = ids.filter(function (id) { return !isLoaded(id); });
+  return Promise.all(todo.map(function (id) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'data/' + id + '.js';
+      s.onload = function () { resolve(); };
+      s.onerror = function () { reject(new Error('题库加载失败: ' + id)); };
+      document.head.appendChild(s);
+    });
+  }));
 }
 
 /* ============ 数据 ============ */
-function loadProgress() {
-  try {
-    var raw = localStorage.getItem(LS_PROGRESS);
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) { return {}; }
+function loadLS(k, def) {
+  try { var r = localStorage.getItem(k); return r ? JSON.parse(r) : def; } catch (e) { return def; }
 }
-function saveProgress(p) {
-  try { localStorage.setItem(LS_PROGRESS, JSON.stringify(p)); } catch (e) { /* 忽略 */ }
+function saveLS(k, v) {
+  try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* 忽略 */ }
 }
-function loadHistory() {
-  try {
-    var raw = localStorage.getItem(LS_HISTORY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) { return []; }
+function apiKey() {
+  try { return localStorage.getItem('ds_chat_key') || ''; } catch (e) { return ''; }
 }
-function saveHistory(h) {
-  try { localStorage.setItem(LS_HISTORY, JSON.stringify(h)); } catch (e) { /* 忽略 */ }
+function hintModel() {
+  try { return localStorage.getItem('ds_hint_model') || 'deepseek-chat'; } catch (e) { return 'deepseek-chat'; }
 }
 
-/* ============ 随机（可指定种子） ============ */
+/* ============ 随机 ============ */
 function mulberry32(seed) {
   var a = seed >>> 0;
   return function () {
@@ -83,125 +75,77 @@ function todaySeed() {
   return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
 }
 
-/* ============ 出卷引擎 ============ */
-function chapterTarget(ch) {
-  return Math.max(5, Math.round(ch.weight / 5) * 5);
-}
-
-/* 章节卷：按分值表权重出题，应用真题/模拟规则 */
-function genChapterPaper(chId, seed) {
-  var ch = chapterById(chId);
-  var rnd = mulberry32(seed);
-  var pool = byCh(chId);
-  var real = shuffle(pool.filter(function (q) { return q.t !== '模拟'; }), rnd);
-  var mock = shuffle(pool.filter(function (q) { return q.t === '模拟'; }), rnd);
-  var target = chapterTarget(ch);
-  var picks = [];
-  var sum = 0;
-  var ri = 0, mi = 0, count = 0;
-  while (sum < target && count < 12) {
-    var q = null;
-    // 混合章节：每题 20% 概率抽模拟题（长期统计 ≈ 8 成真题 2 成模拟）
-    if (ch.rule === 'mixed' && mi < mock.length && rnd() < 0.2) {
-      q = mock[mi++];
-    } else if (ri < real.length) {
-      q = real[ri++];
-    } else if (mi < mock.length) {
-      q = mock[mi++];
-    }
-    if (!q) break;
-    picks.push(q);
-    sum += q.pts;
-    count++;
-  }
-  return { kind: 'chapter', ch: ch, questions: shuffle(picks, rnd), sum: sum };
-}
-
-/* 全卷：150 分，选择 10×5 + 填空 6×5 + 解答 7×10，按章节权重抽样 */
-function genFullPaper(seed) {
-  var rnd = mulberry32(seed);
-  var acts = activeChapters();
-  var totalW = 0;
-  acts.forEach(function (c) { totalW += c.weight; });
-
-  function weightedChapter() {
-    var r = rnd() * totalW;
-    for (var i = 0; i < acts.length; i++) {
-      r -= acts[i].weight;
-      if (r <= 0) return acts[i];
-    }
-    return acts[acts.length - 1];
-  }
-  function pickOne(ch, qt) {
-    var pool = byCh(ch.id).filter(function (q) { return q.qt === qt; });
-    if (!pool.length) return null;
-    var real = pool.filter(function (q) { return q.t !== '模拟'; });
-    var mock = pool.filter(function (q) { return q.t === '模拟'; });
-    if (ch.rule === 'mixed' && mock.length && rnd() < 0.2) {
-      return mock[Math.floor(rnd() * mock.length)];
-    }
-    if (real.length) return real[Math.floor(rnd() * real.length)];
-    return pool[Math.floor(rnd() * pool.length)];
-  }
-  function pickAny(qt) {
-    var pool = QUESTIONS.filter(function (q) { return q.qt === qt && !chapterById(q.ch).ref; });
-    if (!pool.length) return null;
-    return pool[Math.floor(rnd() * pool.length)];
-  }
-
-  var structure = [];
-  for (var i = 0; i < 10; i++) structure.push({ qt: '选择', pts: 5 });
-  for (var j = 0; j < 6; j++) structure.push({ qt: '填空', pts: 5 });
-  for (var k = 0; k < 7; k++) structure.push({ qt: '解答', pts: 10 });
-
-  var picks = [];
-  structure.forEach(function (slot) {
-    var ch = weightedChapter();
-    var q = pickOne(ch, slot.qt) || pickAny(slot.qt);
-    if (q) picks.push(q);
-  });
-  return { kind: 'full', ch: null, questions: picks, sum: picks.reduce(function (s, q) { return s + q.pts; }, 0) };
-}
-
-/* ============ 视图状态 ============ */
-var view = { name: 'home', param: null };
-var currentPaper = null;      // { kind, ch, questions, sum, answers: {qid: true/false} }
-var practice = null;          // { ch, list, idx, revealed }
-var wrongFilter = null;
-
+/* ============ 工具 ============ */
 function $(id) { return document.getElementById(id); }
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+var toastTimer = null;
 function toast(msg) {
   var t = $('toast');
   t.textContent = msg;
   t.classList.add('show');
-  clearTimeout(t._timer);
-  t._timer = setTimeout(function () { t.classList.remove('show'); }, 2200);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2400);
 }
+/* markdown-lite：**加粗** + 换行（LaTeX 由 KaTeX 处理） */
+function fmtText(s) {
+  return esc(s).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+}
+function renderMath() {
+  if (window.renderMathInElement) {
+    try {
+      renderMathInElement($('view'), {
+        delimiters: [
+          { left: '$$', right: '$$', display: true },
+          { left: '$', right: '$', display: false }
+        ],
+        throwOnError: false
+      });
+    } catch (e) { /* 忽略 */ }
+  }
+}
+
+/* ============ 视图状态 ============ */
+var view = { name: 'home', param: null };
+var currentPaper = null;
+var practice = null;
+
 function tagHTML(q) {
-  var src = q.t;
-  if (q.t === '真题' && q.y) src = '真题' + (q.y || '');
-  var cls = q.t === '真题' ? 'tag-real' : (q.t === '模拟' ? 'tag-mock' : 'tag-ref');
+  var src = q.t === '真题' ? ('真题' + (q.y || '')) : '模拟';
+  var cls = q.t === '真题' ? 'tag-real' : (q.ch === 'doubleint' ? 'tag-ref' : 'tag-mock');
   return '<span class="tag ' + cls + '">' + esc(src) + '</span>';
+}
+function srcLabel(q) {
+  if (q.ch === 'triplesurface' && q.src === '经典真题') return '（经典自编，站点暂无该章）';
+  return q.src ? ' · ' + esc(q.src) : '';
 }
 function questionBodyHTML(q, revealed) {
   var opts = '';
   if (q.o && q.o.length) {
-    opts = '<div class="opts">' + q.o.map(function (o, i) {
-      var l = o.charAt(0);
-      return '<div class="opt">' + l + '.</span> ' + esc(o.slice(2)) + '</div>';
+    opts = '<div class="opts">' + q.o.map(function (o) {
+      var l = String(o).charAt(0);
+      return '<div class="opt"><b>' + esc(l) + '.</b> ' + fmtText(String(o).slice(2)) + '</div>';
     }).join('') + '</div>';
   }
   var ans = '';
   if (revealed) {
-    ans = '<div class="answer"><div class="ans-label">✅ 答案：' + esc(q.a) + '</div>' +
-      '<div class="ans-s">📖 解析：' + esc(q.s) + '</div></div>';
+    ans = '<div class="answer"><div class="ans-label">✅ 答案：' + fmtText(q.a) + '</div>' +
+      (q.s ? '<div class="ans-s">📖 解析：' + fmtText(q.s) + '</div>' : '') + '</div>';
   }
   return opts + ans;
+}
+function hintBoxHTML(qid) {
+  var cache = loadLS(LS_HINTS, {});
+  var cached = cache[qid];
+  var body = cached
+    ? '<div class="hint-body">' + fmtText(cached) + '</div>'
+    : '<div class="hint-body hint-loading">💭 正在生成思路提示…</div>';
+  return '<div class="hint-box" id="hintbox-' + qid + '">' +
+    '<div class="hint-head">💡 思路提示 <span class="hint-tag">' + (cached ? '已缓存' : '') + '</span></div>' +
+    body + '</div>';
 }
 
 /* ============ 主渲染 ============ */
@@ -215,19 +159,19 @@ function render() {
   else if (view.name === 'placeholder') renderPlaceholder(v);
   updateTabs();
   updateHeader();
+  renderMath();
   window.scrollTo(0, 0);
 }
 
 function updateTabs() {
-  var map = { home: 'math', wrong: 'wrong', placeholder: view.param === 'english' ? 'english' : 'major' };
-  var active = map[view.name] || 'math';
+  var map = { home: 'math', wrong: 'wrong' };
+  var active = map[view.name] || (view.name === 'placeholder' ? view.param : 'math');
   document.querySelectorAll('.tabbar .tab').forEach(function (b) {
     b.classList.toggle('active', b.dataset.tab === active);
   });
 }
-
 function updateHeader() {
-  var p = loadProgress();
+  var p = loadLS(LS_PROGRESS, {});
   var total = 0, right = 0;
   Object.keys(p).forEach(function (k) {
     var r = p[k];
@@ -240,8 +184,8 @@ function updateHeader() {
 
 /* ============ 首页 ============ */
 function renderHome(v) {
-  var p = loadProgress();
-  var hist = loadHistory();
+  var p = loadLS(LS_PROGRESS, {});
+  var hist = loadLS(LS_HISTORY, []);
 
   var chips = activeChapters().map(function (c) {
     return '<button class="chip' + (view.param === c.id ? ' chip-on' : '') + '" data-act="pickCh" data-id="' + c.id + '">' +
@@ -249,18 +193,18 @@ function renderHome(v) {
   }).join('');
 
   var rows = activeChapters().map(function (c) {
-    var qs = byCh(c.id);
     var done = 0, right = 0;
-    qs.forEach(function (q) {
-      var r = p[q.id];
-      if (r) { done += r.r + r.w; right += r.r; }
-    });
-    var pct = qs.length ? Math.round(done / qs.length * 100) : 0;
+    var qids = byCh(c.id);
+    for (var i = 0; i < qids.length; i++) {
+      var pr = p[qids[i].id];
+      if (pr) { done += pr.r + pr.w; right += pr.r; }
+    }
+    var pct = Math.round(done / Math.max(1, c.count) * 100);
     var rule = c.rule === 'mixed' ? '真题80%+模拟20%' : '纯真题';
     return '<div class="ch-row" data-act="openCh" data-id="' + c.id + '">' +
       '<div class="ch-left"><div class="ch-name">' + esc(c.name) + '</div>' +
-      '<div class="ch-meta">' + esc(c.area) + ' · ' + c.weight + ' 分 · ' + rule + ' · 题库 ' + qs.length + ' 题</div></div>' +
-      '<div class="ch-right"><div class="ch-done">' + done + '/' + qs.length + '</div>' +
+      '<div class="ch-meta">' + esc(c.area) + ' · ' + c.weight + ' 分 · ' + rule + ' · 真题' + c.real + ' / 模拟' + c.mock + '</div></div>' +
+      '<div class="ch-right"><div class="ch-done">已练 ' + done + '/' + c.count + '</div>' +
       '<div class="pbar"><div class="pbar-fill" style="width:' + pct + '%"></div></div>' +
       '<div class="ch-rate">' + (done ? Math.round(right / done * 100) + '%' : '') + '</div></div>' +
       '</div>';
@@ -272,25 +216,87 @@ function renderHome(v) {
 
   v.innerHTML =
     '<div class="card">' +
-      '<div class="card-title">📝 今日卷子</div>' +
-      '<p class="hint-text">选一个章节（或全卷 150 分）→ 按「数学一出题分值表（2021-2026）」权重出卷。今日卷子每天固定，可随时重新出卷。</p>' +
+      '<div class="card-title row-between"><span>📝 今日卷子</span><button class="icon-btn" id="btnOpenSettings" title="设置">⚙️</button></div>' +
+      '<p class="hint-text">选一个章节（或全卷 150 分）→ 按「数学一出题分值表（2021-2026）」权重出卷。题目来自大观园题库（真题·模拟）。</p>' +
       '<div class="chips">' + chips + '<button class="chip chip-full" data-act="pickCh" data-id="__full__">🎯 全卷 150 分</button></div>' +
       '<div class="btn-row">' +
         '<button class="btn btn-primary btn-flex" data-act="genToday">🎲 生成今日卷子</button>' +
         '<button class="btn btn-ghost btn-flex" data-act="genNew">🔄 重新出卷</button>' +
       '</div>' +
-      '<p class="hint-text rule-hint">出卷规则：微分方程之前 100% 真题；微分方程及之后、线代、概率 ≈ 8 成真题 + 2 成高价值模拟题；二重积分不进卷子（保留 ' + (byCh(REF_CHAPTER.id).length) + ' 道参考题）。</p>' +
+      '<p class="hint-text rule-hint">出卷规则：微分方程之前 100% 真题；微分方程及之后、线代、概率 ≈ 8 成真题 + 2 成模拟；二重积分不进卷子（保留 ' + (chapterById('doubleint') ? chapterById('doubleint').count : 10) + ' 道参考题）。做题卡住时点「💡 思路提示」。</p>' +
     '</div>' +
-    '<div class="card">' +
-      '<div class="card-title">📚 章节题库</div>' + rows +
-    '</div>' +
+    '<div class="card"><div class="card-title">📚 章节题库</div>' + rows + '</div>' +
     '<div class="card ref-card" data-act="openRef">' +
-      '<div class="card-title row-between"><span>🔬 二重积分 · 参考题</span><span class="hint-text">' + byCh(REF_CHAPTER.id).length + ' 道</span></div>' +
-      '<p class="hint-text">按要求二重积分不出现在卷子里，只保留最有参考价值的 ' + byCh(REF_CHAPTER.id).length + ' 道题供查阅。</p>' +
+      '<div class="card-title row-between"><span>🔬 二重积分 · 参考题</span><span class="hint-text">' + (chapterById('doubleint') ? chapterById('doubleint').count : 10) + ' 道</span></div>' +
+      '<p class="hint-text">按要求二重积分不出现在卷子里，只保留最有参考价值的真题供查阅。</p>' +
     '</div>' +
-    '<div class="card">' +
-      '<div class="card-title">📜 最近试卷</div>' + histRows +
-    '</div>';
+    '<div class="card"><div class="card-title">📜 最近试卷</div>' + histRows + '</div>';
+  var st = $('btnOpenSettings');
+  if (st) st.onclick = openSettings;
+}
+
+/* ============ 出卷引擎 ============ */
+function chapterTarget(ch) { return Math.max(5, Math.round(ch.weight / 5) * 5); }
+
+function genChapterPaper(chId, seed, done) {
+  loadChapterFiles([chId]).then(function () {
+    var ch = chapterById(chId);
+    var rnd = mulberry32(seed);
+    var pool = byCh(chId);
+    var real = shuffle(pool.filter(function (q) { return q.t !== '模拟'; }), rnd);
+    var mock = shuffle(pool.filter(function (q) { return q.t === '模拟'; }), rnd);
+    var target = chapterTarget(ch);
+    var picks = [], sum = 0, ri = 0, mi = 0, count = 0;
+    while (sum < target && count < 12) {
+      var q = null;
+      if (ch.rule === 'mixed' && mi < mock.length && rnd() < 0.2) q = mock[mi++];
+      else if (ri < real.length) q = real[ri++];
+      else if (mi < mock.length) q = mock[mi++];
+      if (!q) break;
+      picks.push(q); sum += q.pts; count++;
+    }
+    done({ kind: 'chapter', ch: ch, questions: shuffle(picks, rnd), sum: sum });
+  }).catch(function (e) { toast(String(e)); });
+}
+
+function genFullPaper(seed, done) {
+  var acts = activeChapters();
+  loadChapterFiles(acts.map(function (c) { return c.id; })).then(function () {
+    var rnd = mulberry32(seed);
+    var totalW = 0;
+    acts.forEach(function (c) { totalW += c.weight; });
+    function weightedChapter() {
+      var r = rnd() * totalW;
+      for (var i = 0; i < acts.length; i++) { r -= acts[i].weight; if (r <= 0) return acts[i]; }
+      return acts[acts.length - 1];
+    }
+    function pickOne(ch, qt) {
+      var pool = byCh(ch.id).filter(function (q) { return q.qt === qt; });
+      if (!pool.length) return null;
+      var real = pool.filter(function (q) { return q.t !== '模拟'; });
+      var mock = pool.filter(function (q) { return q.t === '模拟'; });
+      if (ch.rule === 'mixed' && mock.length && rnd() < 0.2) return mock[Math.floor(rnd() * mock.length)];
+      if (real.length) return real[Math.floor(rnd() * real.length)];
+      return pool[Math.floor(rnd() * pool.length)];
+    }
+    function pickAny(qt) {
+      var pool = [];
+      acts.forEach(function (c) { byCh(c.id).forEach(function (q) { if (q.qt === qt) pool.push(q); }); });
+      if (!pool.length) return null;
+      return pool[Math.floor(rnd() * pool.length)];
+    }
+    var structure = [];
+    for (var i = 0; i < 10; i++) structure.push({ qt: '选择', pts: 5 });
+    for (var j = 0; j < 6; j++) structure.push({ qt: '填空', pts: 5 });
+    for (var k = 0; k < 7; k++) structure.push({ qt: '解答', pts: 10 });
+    var picks = [];
+    structure.forEach(function (slot) {
+      var ch = weightedChapter();
+      var q = pickOne(ch, slot.qt) || pickAny(slot.qt);
+      if (q) picks.push(q);
+    });
+    done({ kind: 'full', ch: null, questions: picks, sum: picks.reduce(function (s, q) { return s + q.pts; }, 0) });
+  }).catch(function (e) { toast(String(e)); });
 }
 
 /* ============ 试卷视图 ============ */
@@ -304,52 +310,62 @@ function renderPaper(v) {
     return '<div class="q-item">' +
       '<div class="q-head"><span class="q-no">' + (i + 1) + '</span>' +
         '<span class="tag tag-qt">' + q.qt + '</span>' +
-        '<span class="q-pts">' + q.pts + ' 分</span>' + tagHTML(q) + mark + '</div>' +
-      '<div class="q-text">' + esc(q.q) + '</div>' +
+        '<span class="q-pts">' + q.pts + ' 分</span>' + tagHTML(q) + mark +
+        '<span class="q-src">' + srcLabel(q) + '</span></div>' +
+      '<div class="q-text">' + fmtText(q.q) + '</div>' +
       '<div class="q-answer" id="qans-' + i + '">' + questionBodyHTML(q, paper.revealed[q.id] === true) + '</div>' +
       '<div class="q-actions">' +
         (paper.revealed[q.id] ? '' : '<button class="mini-btn" data-act="reveal" data-i="' + i + '">👁 查看答案</button>') +
+        '<button class="mini-btn" data-act="hint" data-qid="' + q.id + '">💡 思路提示</button>' +
         '<button class="mini-btn' + (paper.answers[q.id] === true ? ' on' : '') + '" data-act="markOk" data-i="' + i + '">✓ 做对了</button>' +
         '<button class="mini-btn' + (paper.answers[q.id] === false ? ' on-no' : '') + '" data-act="markNo" data-i="' + i + '">✗ 做错了</button>' +
       '</div>' +
+      '<div id="hintslot-' + i + '"></div>' +
     '</div>';
   }).join('');
   var answered = Object.keys(paper.answers).length;
   v.innerHTML =
     '<div class="sub-header"><button class="icon-btn" data-act="backHome">←</button><div class="sh-title">' + esc(title) + '</div><div class="sh-sub">满分 ' + paper.sum + ' 分</div></div>' +
     '<div class="card"><div class="card-title">本卷 ' + paper.questions.length + ' 题 · 已作答 ' + answered + ' 题</div>' +
-    '<p class="hint-text">做法：先自己做 → 点「查看答案」核对 → 点「做对了/做错了」记录 → 最后交卷算分。</p></div>' +
+    '<p class="hint-text">做法：先自己做 → 卡住点「💡 思路提示」→ 核对「查看答案」→ 记录对错 → 交卷算分。</p></div>' +
     list +
     '<div class="submit-bar"><button class="btn btn-primary btn-flex" data-act="submitPaper">📊 交卷算分</button></div>';
 }
 
-/* ============ 章节刷题视图 ============ */
+/* ============ 章节刷题 ============ */
 function renderChapterPractice(v) {
-  var ch = chapterById(v.param);
+  var ch = chapterById(view.param);
   if (!ch) { view.name = 'home'; render(); return; }
-  if (!practice || practice.ch !== v.param) {
-    var list = shuffle(byCh(ch.id), mulberry32(Date.now() % 2147483647));
-    practice = { ch: v.param, list: list, idx: 0, revealed: {} };
+  if (!practice || practice.ch !== view.param) {
+    practice = { ch: view.param, list: [], idx: 0, revealed: {} };
+    loadChapterFiles([view.param]).then(function () {
+      practice.list = shuffle(byCh(view.param), mulberry32(Date.now() % 2147483647));
+      render();
+    }).catch(function (e) { toast(String(e)); });
+    v.innerHTML = '<div class="card"><div class="empty">📚 题库加载中…</div></div>';
+    return;
   }
   var total = practice.list.length;
   if (!total) { view.name = 'home'; render(); return; }
   var q = practice.list[practice.idx];
   var revealed = practice.revealed[q.id] === true;
-  var p = loadProgress();
+  var p = loadLS(LS_PROGRESS, {});
   var pr = p[q.id] || { r: 0, w: 0 };
   v.innerHTML =
     '<div class="sub-header"><button class="icon-btn" data-act="backHome">←</button>' +
     '<div class="sh-title">' + esc(ch.name) + '</div><div class="sh-sub">' + (practice.idx + 1) + '/' + total + '</div></div>' +
     '<div class="pbar big"><div class="pbar-fill" style="width:' + Math.round((practice.idx) / total * 100) + '%"></div></div>' +
     '<div class="card">' +
-      '<div class="q-head"><span class="tag tag-qt">' + q.qt + '</span><span class="q-pts">' + q.pts + ' 分</span>' + tagHTML(q) + '</div>' +
-      '<div class="q-text big">' + esc(q.q) + '</div>' +
+      '<div class="q-head"><span class="tag tag-qt">' + q.qt + '</span><span class="q-pts">' + q.pts + ' 分</span>' + tagHTML(q) + '<span class="q-src">' + srcLabel(q) + '</span></div>' +
+      '<div class="q-text big">' + fmtText(q.q) + '</div>' +
       '<div id="qans">' + questionBodyHTML(q, revealed) + '</div>' +
       '<div class="q-actions big-actions">' +
         (revealed ? '' : '<button class="btn btn-ghost btn-flex" data-act="revealP">👁 查看答案</button>') +
+        '<button class="btn btn-ghost btn-flex" data-act="hintP">💡 思路提示</button>' +
         '<button class="btn btn-ghost btn-flex" data-act="pOk">✓ 做对了</button>' +
         '<button class="btn btn-ghost btn-flex" data-act="pNo">✗ 做错了</button>' +
       '</div>' +
+      '<div id="hintslot"></div>' +
       '<div class="hint-text">本题已记录：对 ' + pr.r + ' 次 · 错 ' + pr.w + ' 次</div>' +
       '<button class="btn btn-primary btn-block" data-act="nextP">下一题 →</button>' +
     '</div>';
@@ -357,111 +373,202 @@ function renderChapterPractice(v) {
 
 /* ============ 错题本 ============ */
 function renderWrong(v) {
-  var p = loadProgress();
-  var wrong = QUESTIONS.filter(function (q) {
-    var r = p[q.id];
-    return r && r.w > 0;
-  });
-  if (!wrong.length) {
+  var p = loadLS(LS_PROGRESS, {});
+  var wrongIds = Object.keys(p).filter(function (k) { return p[k].w > 0; });
+  if (!wrongIds.length) {
     v.innerHTML = '<div class="card"><div class="empty">🎉 太棒了，错题本是空的！</div></div>';
     return;
   }
-  var list = wrong.map(function (q) {
-    var ch = chapterById(q.ch);
-    return '<div class="card wrong-item">' +
-      '<div class="q-head"><span class="ch-badge">' + esc(ch.short) + '</span>' + tagHTML(q) + '<span class="wrong-count">错 ' + p[q.id].w + ' 次</span></div>' +
-      '<div class="q-text">' + esc(q.q) + '</div>' +
-      '<div class="q-answer">' + questionBodyHTML(q, true) + '</div>' +
-      '<div class="q-actions"><button class="mini-btn" data-act="clearWrong" data-id="' + q.id + '">✅ 已掌握，移出错题本</button></div>' +
-    '</div>';
-  }).join('');
-  v.innerHTML = '<div class="sub-header"><div class="sh-title">⭐ 错题本</div><div class="sh-sub">' + wrong.length + ' 题</div></div>' + list;
+  var acts = activeChapters().map(function (c) { return c.id; });
+  loadChapterFiles(acts).then(function () {
+    var list = [];
+    wrongIds.forEach(function (qid) {
+      for (var i = 0; i < acts.length; i++) {
+        var found = byCh(acts[i]).filter(function (x) { return x.id === qid; });
+        if (found.length) { list.push(found[0]); return; }
+      }
+    });
+    var html = list.map(function (q) {
+      var ch = chapterById(q.ch);
+      return '<div class="card wrong-item">' +
+        '<div class="q-head"><span class="ch-badge">' + esc(ch.short) + '</span>' + tagHTML(q) + '<span class="wrong-count">错 ' + p[q.id].w + ' 次</span></div>' +
+        '<div class="q-text">' + fmtText(q.q) + '</div>' +
+        '<div class="q-answer">' + questionBodyHTML(q, true) + '</div>' +
+        '<div class="q-actions"><button class="mini-btn" data-act="hint" data-qid="' + q.id + '">💡 思路提示</button><button class="mini-btn" data-act="clearWrong" data-id="' + q.id + '">✅ 已掌握，移除</button></div>' +
+        '<div id="hintslot-' + q.id + '"></div>' +
+      '</div>';
+    }).join('');
+    v.innerHTML = '<div class="sub-header"><div class="sh-title">⭐ 错题本</div><div class="sh-sub">' + list.length + ' 题</div></div>' + html;
+    renderMath();
+  }).catch(function (e) { toast(String(e)); });
 }
 
 /* ============ 二重积分参考题 ============ */
 function renderRef(v) {
-  var qs = byCh(REF_CHAPTER.id);
-  var list = qs.map(function (q) {
-    return '<div class="card"><div class="q-head">' + tagHTML(q) + '<span class="q-pts">' + q.pts + ' 分</span></div>' +
-      '<div class="q-text">' + esc(q.q) + '</div>' +
-      '<div class="q-answer">' + questionBodyHTML(q, true) + '</div></div>';
-  }).join('');
-  v.innerHTML =
-    '<div class="sub-header"><button class="icon-btn" data-act="backHome">←</button><div class="sh-title">二重积分 · 参考题</div><div class="sh-sub">' + qs.length + ' 道</div></div>' +
-    '<div class="card"><p class="hint-text">二重积分按要求不出现在每日试卷中，仅保留以下最有参考价值的题。这些题与三重积分、曲线曲面积分同属「多元积分」考点体系，掌握方法后做线面积分更顺。</p></div>' +
-    list;
+  loadChapterFiles(['doubleint']).then(function () {
+    var qs = byCh('doubleint');
+    var list = qs.map(function (q) {
+      return '<div class="card"><div class="q-head">' + tagHTML(q) + '<span class="q-pts">' + q.pts + ' 分</span><span class="q-src">' + srcLabel(q) + '</span></div>' +
+        '<div class="q-text">' + fmtText(q.q) + '</div>' +
+        '<div class="q-answer">' + questionBodyHTML(q, true) + '</div></div>';
+    }).join('');
+    v.innerHTML =
+      '<div class="sub-header"><button class="icon-btn" data-act="backHome">←</button><div class="sh-title">二重积分 · 参考题</div><div class="sh-sub">' + qs.length + ' 道</div></div>' +
+      '<div class="card"><p class="hint-text">二重积分按要求不出现在每日试卷中，仅保留最有参考价值的真题。方法上与三重积分、线面积分同源。</p></div>' + list;
+    renderMath();
+  }).catch(function (e) { toast(String(e)); });
 }
 
 /* ============ 英语/专业课预留 ============ */
 function renderPlaceholder(v) {
-  var isEng = v.param === 'english';
+  var isEng = view.param === 'english';
   v.innerHTML = '<div class="card placeholder-card">' +
     '<div class="ph-icon">' + (isEng ? '🇬🇧' : '📚') + '</div>' +
     '<div class="ph-title">' + (isEng ? '英语一 · 模块预留中' : '专业课 · 模块预留中') + '</div>' +
     '<p class="hint-text ph-desc">' + (isEng
       ? '这里将放置英语一真题/模拟题库：阅读理解、完形、翻译、作文，按年份与题型刷题。'
       : '这里将放置你的专业课题库：按章节出题、真题+模拟混合，与数学模块相同的刷题体验。') + '</p>' +
-    '<p class="hint-text">需要启用时告诉我你的目标院校与专业（比如「408 计算机统考」或某校自命题），我帮你把题库和规则配好。</p>' +
+    '<p class="hint-text">需要启用时告诉我目标院校与专业，我帮你把题库和规则配好。</p>' +
     '</div>';
+}
+
+/* ============ 思路提示 ============ */
+var CHAPTER_HINTS = {
+  'limit': '① 先判断极限类型：0/0、∞/∞、0·∞、1^∞ 等；② 优先等价无穷小替换（sinx~x、1−cosx~x²/2、eˣ−1~x、ln(1+x)~x）；③ 高阶用泰勒展开或洛必达；④ 数列极限考虑夹逼、单调有界、定积分定义。',
+  'diff1': '① 求导问题：熟记基本求导公式与链式法则；② 可导判定：用导数定义（左导=右导）；③ 极值/单调：一阶导符号，拐点看二阶导；④ 证明题联想中值定理（罗尔/拉格朗日/柯西）。',
+  'int1': '① 不定积分先看换元还是分部；② 分部积分口诀"反对幂指三"；③ 定积分优先考虑奇偶性、区间再现；④ 面积/体积题先画图定上下限。',
+  'multidiff': '① 偏导计算：对谁求导就把其他变量当常数；② 全微分 dz=zₓdx+z_ydy；③ 极值：先求驻点，再用 AC−B² 判别；④ 隐函数求导：方程两边对 x 求导解出 zₓ。',
+  'doubleint': '① 先画积分区域，判断用直角坐标还是极坐标；② 含 x²+y² 或圆形区域优先极坐标，别忘 r 因子；③ 对称性：奇函数关于对称区域积分为 0；④ 交换积分次序先改画区域。',
+  'triplesurface': '① 三重积分：球/柱坐标转换，注意雅可比（球坐标 r²sinφ）；② 曲线积分：格林公式把闭曲线转二重积分（∂Q/∂x−∂P/∂y）；③ 曲面积分：高斯公式转三重积分（散度）；④ 补面/挖洞技巧处理奇点。',
+  'series': '① 判敛：正项级数用比较/比值/根值判别，p 级数 ∑1/nᵖ 记住分界 p=1；② 交错级数用莱布尼茨；③ 幂级数求和：先求收敛域，再逐项求导/积分凑已知级数；④ 展开题记熟 eˣ、sinx、cosx、ln(1+x)、1/(1−x) 的展开式。',
+  'ode': '① 一阶：可分离变量 / 一阶线性 y′+P(x)y=Q(x) 用积分因子 e^(∫Pdx)；② 二阶常系数齐次：特征方程 r²+pr+q=0，按实根/重根/共轭复根三种情况写通解；③ 非齐次：待定系数法按右端类型设解；④ 注意初始条件定常数。',
+  'linalg-det': '① 行列式计算：按行列展开、化为上三角、利用行列式性质（倍加不变、互换变号）；② 矩阵求逆：伴随矩阵法 A⁻¹=A*/|A| 或初等行变换；③ 记住 |AB|=|A||B|、|kA|=kⁿ|A|；④ 抽象矩阵优先找特征值或利用 A²=E 等关系。',
+  'linalg-sys': '① 齐次方程组 Ax=0 有非零解 ⟺ r(A)<n；② 非齐次有解 ⟺ r(A)=r(A|b)；③ 基础解系个数 = n−r(A)；④ 向量相关性：看秩是否小于向量个数，n 个 n 维向量看行列式。',
+  'linalg-eig': '① 特征值：解 |λE−A|=0；② 特征向量：代入 (λE−A)x=0 求基础解系；③ 实对称矩阵不同特征值的特征向量正交，必可正交对角化；④ 二次型化标准形：配方法或正交变换法，正负惯性指数看标准形系数符号。',
+  'prob-event': '① 先翻译事件关系（和、积、对立、互斥、独立）；② 加法公式 P(A∪B)=P(A)+P(B)−P(AB)；③ 条件概率 P(A|B)=P(AB)/P(B)；④ 独立：P(AB)=P(A)P(B)，全概率/贝叶斯用于"分层"问题。',
+  'prob-1d': '① 先写出分布（分布列/密度/分布函数）；② 密度函数归一化 ∫f=1 求参数；③ P(a<X<b)=∫_a^b f dx；④ 熟记常见分布：二项、泊松、均匀、指数、正态的数字特征。',
+  'prob-2d': '① 联合密度归一化 ∬f=1；② 边缘密度：对另一个变量积分；③ 独立 ⟺ f(x,y)=f_X(x)f_Y(y)；④ 条件密度 f(x|y)=f(x,y)/f_Y(y)，求概率先在区域上积分。',
+  'prob-moment': '① 期望 E(X)=Σxᵢpᵢ 或 ∫xf dx；② 方差 D(X)=E(X²)−(EX)²；③ 协方差 Cov=E(XY)−EX·EY，相关系数 ρ=Cov/√(DX·DY)；④ 独立/不相关关系：独立⇒不相关，反之不成立（正态除外）。',
+  'prob-lln': '① 切比雪夫不等式 P(|X−EX|≥ε)≤DX/ε²；② 中心极限定理：独立同分布的和标准化后近似 N(0,1)；③ 二项分布近似正态：X~B(n,p) 当 n 大时 X≈N(np,npq)。',
+  'prob-stat': '① 矩估计：令样本矩=总体矩；② 最大似然：写似然函数 L，取对数求导=0；③ 无偏性：验证 E(θ̂)=θ；④ 置信区间/假设检验记住正态总体常用统计量及其分布。'
+};
+var hintBusy = {};
+
+function showHintBox(slotId, qid, q, ch) {
+  var slot = $(slotId);
+  if (!slot) return;
+  slot.innerHTML = hintBoxHTML(qid);
+  renderMath();
+  var cache = loadLS(LS_HINTS, {});
+  if (cache[qid]) return;
+  if (hintBusy[qid]) return;
+  hintBusy[qid] = true;
+  if (apiKey()) {
+    askAIHint(qid, q, ch, slot);
+  } else {
+    setTimeout(function () {
+      var box = $('hintbox-' + qid);
+      if (box) {
+        box.innerHTML = '<div class="hint-head">💡 思路提示 <span class="hint-tag">章节通用</span></div>' +
+          '<div class="hint-body">' + fmtText(CHAPTER_HINTS[ch] || '暂无通用思路。') + '</div>' +
+          '<div class="hint-ai-note">💬 配置 DeepSeek API Key 后可获得针对本题的 AI 个性化思路（右上角 ⚙️ 设置）。</div>';
+        renderMath();
+      }
+      hintBusy[qid] = false;
+    }, 400);
+  }
+}
+
+function askAIHint(qid, q, ch, slot) {
+  var sys = '你是考研数学一资深辅导老师。学生做题卡住了，需要"思路提示"，而不是答案。请给出：1) 本题考察的知识点；2) 切入角度与可用的关键公式；3) 一句关键提醒。禁止给出最终答案、禁止完整解题过程。中文，120字以内，用短横线分点。';
+  var user = '题型：' + q.qt + '（考研数学一）\n章节：' + (chapterById(ch) ? chapterById(ch).name : '') + '\n题目：' + (q.q || '') + (q.o ? '\n选项：' + q.o.join('；') : '');
+  fetch(API_BASE + '/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey() },
+    body: JSON.stringify({ model: hintModel(), messages: [{ role: 'system', content: sys }, { role: 'user', content: user }], max_tokens: 300, temperature: 0.6 })
+  }).then(function (r) {
+    if (!r.ok) {
+      var hints = { 401: 'API Key 无效，请在 ⚙️ 设置里检查', 402: '余额不足，请到 platform.deepseek.com 充值' };
+      throw new Error(hints[r.status] || ('请求失败 HTTP ' + r.status));
+    }
+    return r.json();
+  }).then(function (j) {
+    var text = j.choices && j.choices[0] && j.choices[0].message ? j.choices[0].message.content : '';
+    if (!text) throw new Error('空响应');
+    var cache = loadLS(LS_HINTS, {});
+    cache[qid] = text;
+    saveLS(LS_HINTS, cache);
+    var box = $('hintbox-' + qid);
+    if (box) {
+      box.innerHTML = '<div class="hint-head">💡 思路提示 <span class="hint-tag">AI 生成</span></div><div class="hint-body">' + fmtText(text) + '</div>';
+      renderMath();
+    }
+    hintBusy[qid] = false;
+  }).catch(function (e) {
+    var box = $('hintbox-' + qid);
+    if (box) {
+      box.innerHTML = '<div class="hint-head">💡 思路提示 <span class="hint-tag">章节通用</span></div>' +
+        '<div class="hint-body">' + fmtText(CHAPTER_HINTS[ch] || '暂无通用思路。') + '</div>' +
+        '<div class="hint-ai-note">AI 提示生成失败（' + esc(String(e && e.message || e)) + '），已显示章节通用思路。</div>';
+      renderMath();
+    }
+    hintBusy[qid] = false;
+  });
+}
+
+/* ============ 设置 ============ */
+function openSettings() {
+  $('setKey').value = apiKey();
+  $('setHintModel').value = hintModel();
+  $('settingsModal').classList.remove('hidden');
+}
+function closeSettings() {
+  $('settingsModal').classList.add('hidden');
+}
+function saveSettings() {
+  try { localStorage.setItem('ds_chat_key', $('setKey').value.trim()); } catch (e) { /* 忽略 */ }
+  try { localStorage.setItem('ds_hint_model', $('setHintModel').value); } catch (e) { /* 忽略 */ }
+  toast('✅ 设置已保存（密钥仅存本机）');
+  closeSettings();
 }
 
 /* ============ 动作 ============ */
 function genPaper(seed) {
-  if (view.param === '__full__' || !view.param) {
-    currentPaper = genFullPaper(seed);
-  } else {
-    currentPaper = genChapterPaper(view.param, seed);
-  }
-  currentPaper.answers = {};
-  currentPaper.revealed = {};
-  view.name = 'paper';
-  render();
+  var done = function (paper) {
+    paper.answers = {};
+    paper.revealed = {};
+    currentPaper = paper;
+    view.name = 'paper';
+    render();
+  };
+  toast('📚 题库加载中…');
+  if (view.param === '__full__' || !view.param) genFullPaper(seed, done);
+  else genChapterPaper(view.param, seed, done);
 }
 
 function submitPaper() {
   var paper = currentPaper;
   var score = 0;
-  var done = 0;
-  var p = loadProgress();
+  var p = loadLS(LS_PROGRESS, {});
   paper.questions.forEach(function (q) {
     var st = paper.answers[q.id];
     if (st === undefined) return;
-    done++;
     var r = p[q.id] || { r: 0, w: 0 };
     if (st) { score += q.pts; r.r++; } else { r.w++; }
     p[q.id] = r;
   });
-  saveProgress(p);
-  var hist = loadHistory();
-  var title = paper.kind === 'full' ? '全卷模拟' : paper.ch.name;
-  hist.unshift({ date: new Date().toISOString().slice(0, 10), title: title, score: score, sum: paper.sum, total: paper.questions.length });
-  saveHistory(hist.slice(0, 20));
-  var rate = done ? Math.round(score / (paper.questions.filter(function (q) { return paper.answers[q.id] !== undefined; }).reduce(function (s, q) { return s + q.pts; }, 0) || 1) * 100) : 0;
-  showResult(score, paper, done);
+  saveLS(LS_PROGRESS, p);
+  var hist = loadLS(LS_HISTORY, []);
+  hist.unshift({ date: new Date().toISOString().slice(0, 10), title: paper.kind === 'full' ? '全卷模拟' : paper.ch.name, score: score, sum: paper.sum, total: paper.questions.length });
+  saveLS(LS_HISTORY, hist.slice(0, 20));
+  toast('📊 得分 ' + score + '/' + paper.sum + '（' + Math.round(score / Math.max(1, paper.sum) * 100) + '%）');
   view.name = 'home';
   view.param = null;
   render();
 }
 
-function showResult(score, paper, done) {
-  var total = paper.sum;
-  var pct = Math.round(score / Math.max(1, total) * 100);
-  toast('📊 得分 ' + score + '/' + total + '（' + pct + '%）· 已作答 ' + done + ' 题');
-}
-
-function markAnswer(qid, ok) {
-  if (!currentPaper) return;
-  currentPaper.answers[qid] = ok;
-  currentPaper.revealed[qid] = true;
-  render();
-}
-
 function nextPractice() {
-  var p = loadProgress();
-  var q = practice.list[practice.idx];
-  var st = practice.answered || null;
   practice.idx++;
-  practice.answered = null;
   if (practice.idx >= practice.list.length) {
     practice.idx = 0;
     practice.revealed = {};
@@ -471,15 +578,23 @@ function nextPractice() {
 }
 
 function practiceAnswer(ok) {
-  var p = loadProgress();
+  var p = loadLS(LS_PROGRESS, {});
   var q = practice.list[practice.idx];
   var r = p[q.id] || { r: 0, w: 0 };
   if (ok) r.r++; else r.w++;
   p[q.id] = r;
-  saveProgress(p);
+  saveLS(LS_PROGRESS, p);
   practice.revealed[q.id] = true;
   nextPractice();
   toast(ok ? '✅ 已记录' : '已加入错题本');
+}
+
+function findQuestion(qid) {
+  for (var i = 0; i < CHAPTERS.length; i++) {
+    var qs = byCh(CHAPTERS[i].id);
+    for (var j = 0; j < qs.length; j++) if (qs[j].id === qid) return qs[j];
+  }
+  return null;
 }
 
 function handleClick(e) {
@@ -502,16 +617,14 @@ function handleClick(e) {
     case 'openRef': view = { name: 'ref', param: null }; render(); break;
     case 'backHome': view = { name: 'home', param: null }; currentPaper = null; practice = null; render(); break;
     case 'reveal':
-      var q1 = currentPaper.questions[parseInt(el.dataset.i, 10)];
-      currentPaper.revealed[q1.id] = true;
+      currentPaper.revealed[currentPaper.questions[parseInt(el.dataset.i, 10)].id] = true;
       render();
       break;
-    case 'markOk': markAnswer(currentPaper.questions[parseInt(el.dataset.i, 10)].id, true); break;
-    case 'markNo': markAnswer(currentPaper.questions[parseInt(el.dataset.i, 10)].id, false); break;
+    case 'markOk': currentPaper.answers[currentPaper.questions[parseInt(el.dataset.i, 10)].id] = true; render(); break;
+    case 'markNo': currentPaper.answers[currentPaper.questions[parseInt(el.dataset.i, 10)].id] = false; render(); break;
     case 'submitPaper': submitPaper(); break;
     case 'revealP':
-      var q2 = practice.list[practice.idx];
-      practice.revealed[q2.id] = true;
+      practice.revealed[practice.list[practice.idx].id] = true;
       render();
       break;
     case 'pOk': practiceAnswer(true); break;
@@ -519,23 +632,36 @@ function handleClick(e) {
     case 'nextP':
       practice.revealed[practice.list[practice.idx].id] = true;
       nextPractice();
-      render();
       break;
     case 'clearWrong':
-      var p3 = loadProgress();
-      var r3 = p3[el.dataset.id];
-      if (r3) r3.w = 0;
-      saveProgress(p3);
+      var p3 = loadLS(LS_PROGRESS, {});
+      if (p3[el.dataset.id]) p3[el.dataset.id].w = 0;
+      saveLS(LS_PROGRESS, p3);
       render();
       toast('已移出错题本');
+      break;
+    case 'hint':
+      var card = el.closest('.q-item') || el.closest('.card');
+      var slotEl = card ? card.querySelector('[id^="hintslot"]') : null;
+      if (!slotEl) break;
+      var qi = findQuestion(el.dataset.qid);
+      showHintBox(slotEl.id, el.dataset.qid, qi || {}, qi ? qi.ch : 'limit');
+      break;
+    case 'hintP':
+      var qp = practice.list[practice.idx];
+      showHintBox('hintslot', qp.id, qp, qp.ch);
       break;
   }
 }
 
 /* ============ 初始化 ============ */
 function init() {
-  loadBank();
   document.addEventListener('click', handleClick);
+  var sc = $('btnSaveSettings');
+  if (sc) sc.addEventListener('click', saveSettings);
+  var cc = $('btnCloseSettings');
+  if (cc) cc.addEventListener('click', closeSettings);
+  $('settingsModal').addEventListener('click', function (e) { if (e.target === $('settingsModal')) closeSettings(); });
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(function () { /* 静默 */ });
   }

@@ -156,3 +156,46 @@ button { font-family: inherit; color: inherit; }
   .main { padding: 10px 24px 20px; }
   .q-text { font-size: 16px; }
 }
+
+/* ============ v2 新增：思路提示 / 设置弹窗 / 公式 ============ */
+.q-src { font-size: 10.5px; color: var(--muted); }
+.katex { font-size: 1.08em; }
+.katex-display { margin: 8px 0; overflow-x: auto; overflow-y: hidden; }
+
+.hint-box {
+  margin-top: 10px; border: 1.5px dashed color-mix(in srgb, var(--primary) 40%, transparent);
+  border: 1.5px dashed rgba(79, 70, 229, .4);
+  border-radius: 12px; background: color-mix(in srgb, var(--primary) 5%, var(--card));
+  background: rgba(79, 70, 229, .04);
+  padding: 10px 12px;
+}
+.hint-head { font-size: 13px; font-weight: 800; display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.hint-tag { font-size: 10px; color: var(--muted); font-weight: 600; background: var(--card2); border-radius: 6px; padding: 1px 7px; }
+.hint-body { font-size: 13.5px; line-height: 1.75; color: var(--text); }
+.hint-loading { color: var(--muted); }
+.hint-ai-note { font-size: 11.5px; color: var(--muted); margin-top: 8px; line-height: 1.6; }
+
+.modal {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(10, 12, 30, .5);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  opacity: 1; transition: opacity .2s;
+}
+.modal.hidden { opacity: 0; pointer-events: none; }
+.modal-card {
+  background: var(--card); border-radius: 20px; padding: 18px;
+  width: 100%; max-width: 440px; max-height: 84vh; overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,.3);
+}
+.sp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.sp-title { font-size: 17px; font-weight: 800; }
+.sp-section { background: var(--card2); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+.sp-label { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+.sp-hint { font-size: 12px; color: var(--muted); line-height: 1.7; margin: 8px 0 0; }
+#setKey, #setHintModel {
+  width: 100%; background: var(--card); color: var(--text);
+  border: 1.5px solid var(--border); border-radius: 12px;
+  padding: 11px 12px; font-size: 15px; font-family: inherit; outline: none;
+}
+#setKey:focus, #setHintModel:focus { border-color: var(--primary); }
