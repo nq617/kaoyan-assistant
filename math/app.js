@@ -52,6 +52,53 @@ function hintModel() {
   try { return localStorage.getItem('ds_hint_model') || 'deepseek-chat'; } catch (e) { return 'deepseek-chat'; }
 }
 
+/* ============ 错题本记忆周期（艾宾浩斯式间隔复习） ============ */
+var SRS_INTERVALS = [1, 2, 4, 7, 15, 30]; // 天
+function pad2(n) { return String(n).padStart(2, '0'); }
+function todayStr() {
+  var d = new Date();
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+}
+function addDaysStr(dateStr, n) {
+  var p = dateStr.split('-');
+  var d = new Date(+p[0], +p[1] - 1, +p[2]);
+  d.setDate(d.getDate() + n);
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+}
+function srsStageLabel(srs) {
+  if (!srs) return '';
+  if (srs.done) return '已掌握';
+  if (srs.stage === 0) return '新错题 · 明天复习';
+  var labels = ['', '第1次复习', '第2次复习', '第3次复习', '第4次复习', '第5次复习'];
+  var idx = Math.min(srs.stage, 5);
+  return labels[idx] + ' · ' + srs.next + ' 复习';
+}
+function srsDue(qid) {
+  var p = loadLS(LS_PROGRESS, {});
+  var r = p[qid];
+  if (!r || !r.srs || r.srs.done) return false;
+  return r.srs.next <= todayStr();
+}
+function dueCount() {
+  var p = loadLS(LS_PROGRESS, {});
+  var n = 0;
+  Object.keys(p).forEach(function (k) { if (srsDue(k)) n++; });
+  return n;
+}
+function advanceSrsRecord(r) {
+  if (!r.srs || r.srs.done) return;
+  var stage = r.srs.stage + 1;
+  if (stage > 5) {
+    r.srs.done = true;
+  } else {
+    r.srs.stage = stage;
+    r.srs.next = addDaysStr(todayStr(), SRS_INTERVALS[stage]);
+  }
+}
+function resetSrsRecord(r) {
+  r.srs = { stage: 0, next: addDaysStr(todayStr(), 1), done: false };
+}
+
 /* ============ 随机 ============ */
 function mulberry32(seed) {
   var a = seed >>> 0;
@@ -158,6 +205,7 @@ function render() {
   else if (view.name === 'placeholder') renderPlaceholder(v);
   updateTabs();
   updateHeader();
+  updateBadges();
   renderMath();
   window.scrollTo(0, 0);
 }
@@ -179,6 +227,20 @@ function updateHeader() {
   });
   $('statTotal').textContent = total;
   $('statRate').textContent = total ? Math.round(right / total * 100) + '%' : '—';
+  var due = dueCount();
+  var chip = $('statDue');
+  if (chip) {
+    chip.textContent = '🔔 待复习 ' + due;
+    chip.style.display = due > 0 ? '' : 'none';
+  }
+}
+function updateBadges() {
+  var due = dueCount();
+  var b = $('wrongBadge');
+  if (b) {
+    b.textContent = due > 0 ? due : '';
+    b.style.display = due > 0 ? '' : 'none';
+  }
 }
 
 /* ============ 首页 ============ */
@@ -380,7 +442,9 @@ function renderChapterPractice(v) {
     '</div>';
 }
 
-/* ============ 错题本 ============ */
+/* ============ 错题本（自动归纳 + 记忆周期） ============ */
+var wrongFilter = 'all'; // all | due | done
+
 function renderWrong(v) {
   var p = loadLS(LS_PROGRESS, {});
   var wrongIds = Object.keys(p).filter(function (k) { return p[k].w > 0; });
@@ -390,6 +454,7 @@ function renderWrong(v) {
   }
   var acts = activeChapters().map(function (c) { return c.id; });
   loadChapterFiles(acts).then(function () {
+    // 解析错题
     var list = [];
     wrongIds.forEach(function (qid) {
       for (var i = 0; i < acts.length; i++) {
@@ -397,17 +462,67 @@ function renderWrong(v) {
         if (found.length) { list.push(found[0]); return; }
       }
     });
-    var html = list.map(function (q) {
+    var due = list.filter(function (q) { return srsDue(q.id); });
+    var done = list.filter(function (q) { return p[q.id].srs && p[q.id].srs.done; });
+    // 过滤
+    var filtered = list.filter(function (q) {
+      if (wrongFilter === 'due') return srsDue(q.id);
+      if (wrongFilter === 'done') return p[q.id].srs && p[q.id].srs.done;
+      return true;
+    });
+    // 按章节归纳
+    var groups = {};
+    filtered.forEach(function (q) {
       var ch = chapterById(q.ch);
-      return '<div class="card wrong-item">' +
-        '<div class="q-head"><span class="ch-badge">' + esc(ch.short) + '</span>' + tagHTML(q) + '<span class="wrong-count">错 ' + p[q.id].w + ' 次</span></div>' +
-        '<div class="q-text">' + fmtText(q.q) + '</div>' +
-        '<div class="q-answer">' + questionBodyHTML(q, true) + '</div>' +
-        '<div class="q-actions"><button class="mini-btn" data-act="hint" data-qid="' + q.id + '">💡 思路提示</button><button class="mini-btn" data-act="clearWrong" data-id="' + q.id + '">✅ 已掌握，移除</button></div>' +
-        '<div id="hintslot-' + q.id + '"></div>' +
+      var key = ch.area + ' · ' + ch.name;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(q);
+    });
+
+    var chips =
+      '<button class="chip' + (wrongFilter === 'all' ? ' chip-on' : '') + '" data-act="wrongFilter" data-f="all">全部 ' + list.length + '</button>' +
+      '<button class="chip' + (wrongFilter === 'due' ? ' chip-on' : '') + '" data-act="wrongFilter" data-f="due">🔔 待复习 ' + due.length + '</button>' +
+      '<button class="chip' + (wrongFilter === 'done' ? ' chip-on' : '') + '" data-act="wrongFilter" data-f="done">已掌握 ' + done.length + '</button>';
+
+    var stats = '<div class="wrong-stats">' +
+      '<div class="ws-item"><b>' + list.length + '</b><span>错题总数</span></div>' +
+      '<div class="ws-item ws-due"><b>' + due.length + '</b><span>今日待复习</span></div>' +
+      '<div class="ws-item"><b>' + done.length + '</b><span>已掌握</span></div>' +
       '</div>';
+
+    var sections = Object.keys(groups).map(function (key) {
+      var qs = groups[key];
+      var cards = qs.map(function (q) {
+        var pr = p[q.id];
+        var srs = pr.srs;
+        var isDue = srsDue(q.id);
+        var isDone = srs && srs.done;
+        var stageCls = isDone ? 'srs-done' : (isDue ? 'srs-due' : 'srs-wait');
+        var stageText = srsStageLabel(srs) || '待复习';
+        var ch = chapterById(q.ch);
+        return '<div class="card wrong-item' + (isDue ? ' due-card' : '') + '">' +
+          '<div class="q-head"><span class="ch-badge">' + esc(ch.short) + '</span>' + tagHTML(q) +
+            '<span class="wrong-count">错 ' + pr.w + ' 次</span>' +
+            '<span class="srs-stage ' + stageCls + '">' + esc(stageText) + '</span></div>' +
+          '<div class="q-text">' + fmtText(q.q) + '</div>' +
+          '<div class="q-answer">' + questionBodyHTML(q, true) + '</div>' +
+          '<div class="q-actions">' +
+            '<button class="mini-btn" data-act="hint" data-qid="' + q.id + '">💡 思路提示</button>' +
+            '<button class="mini-btn on" data-act="srsOk" data-id="' + q.id + '">✅ 我会了</button>' +
+            '<button class="mini-btn on-no" data-act="srsAgain" data-id="' + q.id + '">❌ 又忘了</button>' +
+            '<button class="mini-btn" data-act="removeWrong" data-id="' + q.id + '">🗑 移除</button>' +
+          '</div>' +
+          '<div id="hintslot-' + q.id + '"></div>' +
+        '</div>';
+      }).join('');
+      return '<div class="section-hdr">' + esc(key) + ' <span>' + qs.length + ' 题</span></div>' + cards;
     }).join('');
-    v.innerHTML = '<div class="sub-header"><div class="sh-title">⭐ 错题本</div><div class="sh-sub">' + list.length + ' 题</div></div>' + html;
+
+    v.innerHTML =
+      '<div class="sub-header"><div class="sh-title">⭐ 错题本</div><div class="sh-sub">艾宾浩斯式记忆周期</div></div>' +
+      '<div class="card">' + stats + '<div class="chips" style="margin-top:10px">' + chips + '</div>' +
+      '<p class="hint-text">记忆周期：错题次日复习 → 2天 → 4天 → 7天 → 15天 → 30天，全部通过即掌握。到期未复习的题会标红并在 App 打开时提醒你。</p></div>' +
+      (sections || '<div class="card"><div class="empty">没有符合条件的错题。</div></div>');
     renderMath();
   }).catch(function (e) { toast(String(e)); });
 }
@@ -563,7 +678,7 @@ function submitPaper() {
     var st = paper.answers[q.id];
     if (st === undefined) return;
     var r = p[q.id] || { r: 0, w: 0 };
-    if (st) { score += q.pts; r.r++; } else { r.w++; }
+    if (st) { score += q.pts; r.r++; advanceSrsRecord(r); } else { r.w++; resetSrsRecord(r); }
     p[q.id] = r;
   });
   saveLS(LS_PROGRESS, p);
@@ -590,12 +705,12 @@ function practiceAnswer(ok) {
   var p = loadLS(LS_PROGRESS, {});
   var q = practice.list[practice.idx];
   var r = p[q.id] || { r: 0, w: 0 };
-  if (ok) r.r++; else r.w++;
+  if (ok) { r.r++; advanceSrsRecord(r); } else { r.w++; resetSrsRecord(r); }
   p[q.id] = r;
   saveLS(LS_PROGRESS, p);
   practice.revealed[q.id] = true;
   nextPractice();
-  toast(ok ? '✅ 已记录' : '已加入错题本');
+  toast(ok ? '✅ 已记录' : '已加入错题本（明天安排第一次复习）');
 }
 
 function findQuestion(qid) {
@@ -642,12 +757,36 @@ function handleClick(e) {
       practice.revealed[practice.list[practice.idx].id] = true;
       nextPractice();
       break;
-    case 'clearWrong':
-      var p3 = loadLS(LS_PROGRESS, {});
-      if (p3[el.dataset.id]) p3[el.dataset.id].w = 0;
-      saveLS(LS_PROGRESS, p3);
+    case 'wrongFilter': wrongFilter = el.dataset.f; render(); break;
+    case 'srsOk':
+      var p4 = loadLS(LS_PROGRESS, {});
+      var r4 = p4[el.dataset.id] || { r: 0, w: 0 };
+      r4.r++;
+      advanceSrsRecord(r4);
+      p4[el.dataset.id] = r4;
+      saveLS(LS_PROGRESS, p4);
+      toast('✅ 复习通过，下次 ' + (function () {
+        var r5 = loadLS(LS_PROGRESS, {})[el.dataset.id];
+        return r5 && r5.srs && !r5.srs.done ? r5.srs.next : '已掌握';
+      })());
       render();
-      toast('已移出错题本');
+      break;
+    case 'srsAgain':
+      var p5 = loadLS(LS_PROGRESS, {});
+      var r6 = p5[el.dataset.id] || { r: 0, w: 0 };
+      r6.w++;
+      resetSrsRecord(r6);
+      p5[el.dataset.id] = r6;
+      saveLS(LS_PROGRESS, p5);
+      toast('已重置记忆周期，明天重新复习');
+      render();
+      break;
+    case 'removeWrong':
+      var p6 = loadLS(LS_PROGRESS, {});
+      if (p6[el.dataset.id]) { p6[el.dataset.id].w = 0; p6[el.dataset.id].srs = null; }
+      saveLS(LS_PROGRESS, p6);
+      render();
+      toast('已从错题本移除');
       break;
     case 'hint':
       var card = el.closest('.q-item') || el.closest('.card');
@@ -675,6 +814,11 @@ function init() {
     navigator.serviceWorker.register('sw.js').catch(function () { /* 静默 */ });
   }
   render();
+  // 打开 App 时提醒到期错题
+  setTimeout(function () {
+    var due = dueCount();
+    if (due > 0) toast('🔔 今天有 ' + due + ' 道错题到期，去「错题」页复习吧');
+  }, 1200);
 }
 
 if (document.readyState === 'loading') {

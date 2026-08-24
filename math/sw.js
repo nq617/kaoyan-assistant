@@ -1,5 +1,5 @@
 /* 数一刷题助手 - Service Worker：离线外壳 */
-var CACHE = 's1math-v2';
+var CACHE = 's1math-v3';
 var ASSETS = [
   './',
   './index.html',

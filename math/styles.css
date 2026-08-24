@@ -199,3 +199,31 @@ button { font-family: inherit; color: inherit; }
   padding: 11px 12px; font-size: 15px; font-family: inherit; outline: none;
 }
 #setKey:focus, #setHintModel:focus { border-color: var(--primary); }
+
+/* ============ 错题本记忆周期 ============ */
+.due-chip { color: var(--danger); border-color: rgba(239, 68, 68, .35); }
+.due-chip b { color: var(--danger); }
+.tab-badge {
+  display: inline-block; min-width: 17px; height: 17px; line-height: 17px;
+  background: var(--danger); color: #fff; border-radius: 999px;
+  font-size: 10px; font-weight: 800; text-align: center;
+  margin-left: 2px; padding: 0 4px; vertical-align: 2px;
+}
+.wrong-stats { display: flex; gap: 10px; }
+.ws-item {
+  flex: 1; background: var(--card2); border-radius: 12px; padding: 10px 6px;
+  text-align: center;
+}
+.ws-item b { display: block; font-size: 20px; color: var(--primary); }
+.ws-item span { font-size: 11px; color: var(--muted); }
+.ws-due b { color: var(--danger); }
+.section-hdr {
+  font-size: 13px; font-weight: 800; margin: 14px 2px 8px; color: var(--muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.section-hdr span { background: var(--card2); border-radius: 999px; padding: 1px 9px; font-size: 11px; }
+.srs-stage { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 7px; }
+.srs-due { background: #fdecec; color: var(--danger); }
+.srs-wait { background: #fef3c7; color: #b45309; }
+.srs-done { background: #e5f8f0; color: var(--ok); }
+.due-card { border-color: rgba(239, 68, 68, .35); }
