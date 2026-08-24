@@ -5,7 +5,7 @@ window.MATH_CHAPTERS = [
   { id: 'int1', area: '高数', name: '一元函数积分学', short: '一元积分', weight: 11, rule: 'pure', count: 593, real: 25, mock: 568 },
   { id: 'multidiff', area: '高数', name: '多元函数微分学', short: '多元微分', weight: 14, rule: 'pure', count: 356, real: 41, mock: 315 },
   { id: 'doubleint', area: '高数', name: '二重积分（参考题，不进卷子）', short: '二重积分', weight: 0, rule: 'pure', count: 10, real: 10, mock: 0, ref: true },
-  { id: 'triplesurface', area: '高数', name: '三重积分与曲线曲面积分', short: '三重线面积分', weight: 20, rule: 'pure', count: 6, real: 6, mock: 0 },
+  { id: 'triplesurface', area: '高数', name: '三重积分与曲线曲面积分', short: '三重线面积分', weight: 20, rule: 'pure', count: 0, real: 0, mock: 0 },
   { id: 'series', area: '高数', name: '无穷级数', short: '级数', weight: 11, rule: 'pure', count: 416, real: 63, mock: 353 },
   { id: 'ode', area: '高数', name: '常微分方程', short: '微分方程', weight: 10, rule: 'mixed', count: 437, real: 53, mock: 384 },
   { id: 'linalg-det', area: '线代', name: '行列式与矩阵', short: '行列式矩阵', weight: 5, rule: 'mixed', count: 419, real: 68, mock: 351 },

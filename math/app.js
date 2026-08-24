@@ -119,7 +119,6 @@ function tagHTML(q) {
   return '<span class="tag ' + cls + '">' + esc(src) + '</span>';
 }
 function srcLabel(q) {
-  if (q.ch === 'triplesurface' && q.src === '经典真题') return '（经典自编，站点暂无该章）';
   return q.src ? ' · ' + esc(q.src) : '';
 }
 function questionBodyHTML(q, revealed) {
@@ -201,9 +200,10 @@ function renderHome(v) {
     }
     var pct = Math.round(done / Math.max(1, c.count) * 100);
     var rule = c.rule === 'mixed' ? '真题80%+模拟20%' : '纯真题';
+    var metaRight = c.count ? ('真题' + c.real + ' / 模拟' + c.mock) : '题目待收录';
     return '<div class="ch-row" data-act="openCh" data-id="' + c.id + '">' +
       '<div class="ch-left"><div class="ch-name">' + esc(c.name) + '</div>' +
-      '<div class="ch-meta">' + esc(c.area) + ' · ' + c.weight + ' 分 · ' + rule + ' · 真题' + c.real + ' / 模拟' + c.mock + '</div></div>' +
+      '<div class="ch-meta">' + esc(c.area) + ' · ' + c.weight + ' 分 · ' + rule + ' · ' + metaRight + '</div></div>' +
       '<div class="ch-right"><div class="ch-done">已练 ' + done + '/' + c.count + '</div>' +
       '<div class="pbar"><div class="pbar-fill" style="width:' + pct + '%"></div></div>' +
       '<div class="ch-rate">' + (done ? Math.round(right / done * 100) + '%' : '') + '</div></div>' +
@@ -243,6 +243,10 @@ function genChapterPaper(chId, seed, done) {
     var ch = chapterById(chId);
     var rnd = mulberry32(seed);
     var pool = byCh(chId);
+    if (!pool.length) {
+      toast('「' + ch.name + '」暂无题目（大观园题库待收录该章节）');
+      return;
+    }
     var real = shuffle(pool.filter(function (q) { return q.t !== '模拟'; }), rnd);
     var mock = shuffle(pool.filter(function (q) { return q.t === '模拟'; }), rnd);
     var target = chapterTarget(ch);
@@ -286,9 +290,9 @@ function genFullPaper(seed, done) {
       return pool[Math.floor(rnd() * pool.length)];
     }
     var structure = [];
+    // 题库无填空题，全卷结构：10 选择(50分) + 10 解答(100分) = 150 分
     for (var i = 0; i < 10; i++) structure.push({ qt: '选择', pts: 5 });
-    for (var j = 0; j < 6; j++) structure.push({ qt: '填空', pts: 5 });
-    for (var k = 0; k < 7; k++) structure.push({ qt: '解答', pts: 10 });
+    for (var k = 0; k < 10; k++) structure.push({ qt: '解答', pts: 10 });
     var picks = [];
     structure.forEach(function (slot) {
       var ch = weightedChapter();
@@ -346,7 +350,12 @@ function renderChapterPractice(v) {
     return;
   }
   var total = practice.list.length;
-  if (!total) { view.name = 'home'; render(); return; }
+  if (!total) {
+    v.innerHTML =
+      '<div class="sub-header"><button class="icon-btn" data-act="backHome">←</button><div class="sh-title">' + esc(ch.name) + '</div></div>' +
+      '<div class="card"><div class="empty">📭 该章节题目暂未收录（大观园题库建设中）。<br>等站点更新后告诉我，我会同步进 App。</div></div>';
+    return;
+  }
   var q = practice.list[practice.idx];
   var revealed = practice.revealed[q.id] === true;
   var p = loadLS(LS_PROGRESS, {});
