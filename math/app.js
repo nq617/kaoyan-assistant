@@ -203,6 +203,8 @@ function render() {
   else if (view.name === 'wrong') renderWrong(v);
   else if (view.name === 'ref') renderRef(v);
   else if (view.name === 'placeholder') renderPlaceholder(v);
+  else if (view.name === 'review') renderReview(v);
+  else if (view.name === 'quiz') renderQuiz(v);
   updateTabs();
   updateHeader();
   updateBadges();
@@ -211,7 +213,7 @@ function render() {
 }
 
 function updateTabs() {
-  var map = { home: 'math', wrong: 'wrong' };
+  var map = { home: 'math', wrong: 'wrong', review: 'review', quiz: 'review' };
   var active = map[view.name] || (view.name === 'placeholder' ? view.param : 'math');
   document.querySelectorAll('.tabbar .tab').forEach(function (b) {
     b.classList.toggle('active', b.dataset.tab === active);
@@ -640,6 +642,302 @@ function askAIHint(qid, q, ch, slot) {
   });
 }
 
+/* ============ 每周复习回顾 ============ */
+var CONCEPT_QUESTIONS = {
+  'limit': { q: '洛必达法则的使用条件是什么？哪些情况不能直接用？', a: '条件：0/0 或 ∞/∞ 型；分子分母在去心邻域内可导；分母导数不为 0；求导后的极限存在（或为 ∞）。注意 0·∞、∞−∞、1^∞ 等未定式要先变形，且不能对非未定式滥用。' },
+  'diff1': { q: '可导、可微、连续三者之间是什么关系？', a: '可导 ⟺ 可微 ⇒ 连续；连续不一定可导（如 |x| 在 0 点）。一元函数中可导与可微等价。' },
+  'int1': { q: '定积分换元法与不定积分换元法有什么不同？', a: '定积分换元必须同时换上下限，且不必回代原变量；要求变换函数单调有连续导数。' },
+  'multidiff': { q: '偏导数存在、偏导数连续、可微之间是什么关系？', a: '偏导连续 ⇒ 可微 ⇒ 偏导存在（且方向导数存在）；偏导存在推不出可微。' },
+  'doubleint': { q: '什么时候二重积分优先用极坐标计算？', a: '积分区域为圆、扇形、圆环，或被积函数含 x²+y² 结构时优先极坐标；换元时别忘了多乘一个 r。' },
+  'triplesurface': { q: '格林公式的适用条件是什么？', a: '曲线为正向闭曲线、区域单连通、P、Q 在区域内有一阶连续偏导数；有奇点时要挖洞处理。' },
+  'series': { q: '幂级数在收敛区间端点处一定收敛吗？', a: '不一定。端点处收敛性要代入具体值单独判断（阿贝尔定理只保证收敛区间内部绝对收敛）。' },
+  'ode': { q: '二阶常系数齐次线性方程特征根为共轭复根时，通解形式是什么？', a: '若 r=α±iβ，则通解 y = e^(αx)(C₁cosβx + C₂sinβx)。' },
+  'linalg-det': { q: '方阵可逆的充要条件有哪些？（说出三个）', a: '|A|≠0；r(A)=n；特征值全不为 0；行（列）向量组线性无关；齐次方程组只有零解。' },
+  'linalg-sys': { q: '齐次线性方程组解空间的维数与系数矩阵秩的关系？', a: '解空间维数 = n − r(A)，其中 n 为未知数个数。基础解系含 n−r(A) 个解向量。' },
+  'linalg-eig': { q: '实对称矩阵的特征值与特征向量有什么特殊性质？', a: '特征值全为实数；不同特征值对应的特征向量相互正交；实对称矩阵必可正交对角化。' },
+  'prob-event': { q: '事件互斥与相互独立有什么区别？', a: '互斥：P(AB)=0，不能同时发生；独立：P(AB)=P(A)P(B)，一个发生不影响另一个的概率。两个正概率事件互斥则必不独立。' },
+  'prob-1d': { q: '分布函数 F(x) 有哪些基本性质？', a: '非降；右连续；F(−∞)=0，F(+∞)=1；P(a<X≤b)=F(b)−F(a)。' },
+  'prob-2d': { q: '如何由二维联合密度求边缘密度？', a: '对另一变量在整个取值范围内积分：f_X(x)=∫f(x,y)dy，f_Y(y)=∫f(x,y)dx。' },
+  'prob-moment': { q: '随机变量独立与不相关是什么关系？', a: '独立 ⇒ 不相关（Cov=0）；不相关一般推不出独立，只有二维正态分布例外（不相关⟺独立）。' },
+  'prob-lln': { q: '中心极限定理（林德伯格-莱维）说的是什么？', a: '独立同分布、方差有限的随机变量序列，其和的标准化变量近似服从标准正态分布，即 (ΣXᵢ−nμ)/(√n σ) → N(0,1)。' },
+  'prob-stat': { q: '什么是无偏估计？', a: '若估计量 θ̂ 满足 E(θ̂)=θ，则称 θ̂ 为 θ 的无偏估计。样本均值是总体均值的无偏估计。' }
+};
+
+function weekStartStr() { return addDaysStr(todayStr(), -6); }
+
+/* 本周做题统计（需章节数据已加载） */
+function weeklyStats() {
+  var p = loadLS(LS_PROGRESS, {});
+  var ws = weekStartStr();
+  var done = 0, wrong = 0;
+  var byCh = {};
+  Object.keys(p).forEach(function (qid) {
+    var r = p[qid];
+    if (r.last && r.last >= ws) {
+      done++;
+      var q = findQuestion(qid);
+      var cid = q ? q.ch : null;
+      if (cid) {
+        byCh[cid] = byCh[cid] || { done: 0, wrong: 0, right: 0 };
+        byCh[cid].done++;
+        if (r.w > 0 && r.lastW && r.lastW >= ws) byCh[cid].wrong++;
+        else if (r.lastW && r.lastW >= ws) byCh[cid].wrong++;
+      }
+    }
+    if (r.lastW && r.lastW >= ws) wrong++;
+  });
+  return { done: done, wrong: wrong, byCh: byCh };
+}
+
+var reviewState = { rows: null, mode: null, loading: false };
+
+function renderReview(v) {
+  var ws = weekStartStr();
+  var acts = activeChapters().map(function (c) { return c.id; });
+  v.innerHTML = '<div class="sub-header"><button class="icon-btn" data-act="backHome">←</button><div class="sh-title">📆 每周复习回顾</div><div class="sh-sub">' + ws + ' 起</div></div>' +
+    '<div class="card"><div class="card-title">📝 本周学习内容</div>' +
+    '<textarea id="weekText" class="week-input" placeholder="写下本周学了哪些内容，例如：&#10;极限：洛必达、泰勒展开、等价无穷小&#10;一元积分：换元、分部积分&#10;线代：矩阵求逆、特征值"></textarea>' +
+    '<p class="hint-text" id="weekStatsLine">正在统计本周做题数据…</p>' +
+    '<div class="btn-row"><button class="btn btn-primary btn-flex" data-act="analyzeWeek">🔍 分析需要回顾的知识点</button></div></div>' +
+    '<div id="reviewResult"></div>' +
+    '<div class="card"><p class="hint-text">💡 用法：写下本周学的内容 → 点分析 → 对建议的薄弱知识点「📝 出题练」刷几道题，或「💬 考我理解」让 AI 测验你的概念掌握程度（配 DeepSeek Key 效果最佳）。</p></div>';
+
+  var ta = $('weekText');
+  ta.value = loadLS('s1_week_text', '');
+  ta.addEventListener('input', function () {
+    saveLS('s1_week_text', ta.value);
+    reviewState.rows = null;
+  });
+
+  loadChapterFiles(acts).then(function () {
+    var st = weeklyStats();
+    var line = '本周做题 <b>' + st.done + '</b> 道 · 做错 <b>' + st.wrong + '</b> 道';
+    var chNames = [];
+    Object.keys(st.byCh).forEach(function (cid) {
+      var c = chapterById(cid);
+      if (c) chNames.push(c.short);
+    });
+    if (chNames.length) line += ' · 涉及：' + chNames.join('、');
+    var el = $('weekStatsLine');
+    if (el) el.innerHTML = line;
+    if (reviewState.rows) renderReviewResult();
+  }).catch(function () { /* 忽略 */ });
+}
+
+function localAnalysisRows() {
+  var st = weeklyStats();
+  var rows = [];
+  Object.keys(st.byCh).forEach(function (cid) {
+    var c = chapterById(cid);
+    var s = st.byCh[cid];
+    var rate = s.done ? Math.round((s.done - s.wrong) / s.done * 100) : 0;
+    var weak = s.wrong >= 1 || (s.done >= 10 && rate < 60);
+    if (weak) {
+      rows.push({ ch: cid, name: c.name, _w: s.wrong, _rate: rate, reason: '本周做 ' + s.done + ' 题错 ' + s.wrong + ' 题（正确率 ' + rate + '%）', advice: '先回看错题解析总结方法，再针对性刷题巩固' });
+    }
+  });
+  rows.sort(function (a, b) { return (b._w - a._w) || (a._rate - b._rate); });
+  rows = rows.slice(0, 6);
+  // 补充：到期未复习的错题所在章节
+  var p = loadLS(LS_PROGRESS, {});
+  var seen = {};
+  Object.keys(p).forEach(function (qid) {
+    var r = p[qid];
+    if (r.w > 0 && r.srs && !r.srs.done && r.srs.next <= todayStr()) {
+      var q = findQuestion(qid);
+      if (q && !seen[q.ch]) {
+        seen[q.ch] = true;
+        if (!rows.some(function (x) { return x.ch === q.ch; })) {
+          var c2 = chapterById(q.ch);
+          rows.push({ ch: q.ch, name: c2.name, reason: '错题已到复习周期但尚未复习', advice: '去错题本完成到期复习' });
+        }
+      }
+    }
+  });
+  return rows;
+}
+
+function analyzeWeek() {
+  if (reviewState.loading) return;
+  var text = ($('weekText') ? $('weekText').value : '').trim();
+  var st = weeklyStats();
+  if (apiKey() && (text || st.done > 0)) {
+    reviewState.loading = true;
+    $('reviewResult').innerHTML = '<div class="card"><div class="empty">🧠 AI 分析中…</div></div>';
+    var sys = '你是考研数学一辅导老师。根据学生本周学习内容和做题数据，输出"需要回顾的知识点"清单。严格按此格式每行一个，共 3~6 行：章节名 | 原因 | 建议动作（不超过15字）。章节名必须从以下选取：' + activeChapters().map(function (c) { return c.name; }).join('、') + '。不要输出其他内容。';
+    var chStats = Object.keys(st.byCh).map(function (cid) {
+      var c = chapterById(cid); var s = st.byCh[cid];
+      var rate = s.done ? Math.round((s.done - s.wrong) / s.done * 100) : 0;
+      return c.name + '：做' + s.done + '错' + s.wrong + '（' + rate + '%）';
+    }).join('；');
+    var user = '本周学习内容：' + (text || '（未填写）') + '\n本周做题数据：共' + st.done + '题，错' + st.wrong + '题。各章节：' + chStats;
+    fetch(API_BASE + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey() },
+      body: JSON.stringify({ model: hintModel(), messages: [{ role: 'system', content: sys }, { role: 'user', content: user }], max_tokens: 600, temperature: 0.5 })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (j) {
+      var out = j.choices && j.choices[0] && j.choices[0].message ? j.choices[0].message.content : '';
+      reviewState.rows = parseAIRows(out);
+      reviewState.mode = 'ai';
+      reviewState.raw = out;
+      reviewState.loading = false;
+      renderReviewResult();
+    }).catch(function (e) {
+      reviewState.rows = localAnalysisRows();
+      reviewState.mode = 'local';
+      reviewState.loading = false;
+      $('reviewResult').innerHTML = '';
+      renderReviewResult();
+      toast('AI 分析失败（' + String(e && e.message || e) + '），已用本地数据生成回顾建议');
+    });
+  } else {
+    reviewState.rows = localAnalysisRows();
+    reviewState.mode = 'local';
+    renderReviewResult();
+  }
+}
+
+function parseAIRows(out) {
+  var rows = [];
+  String(out || '').split('\n').forEach(function (line) {
+    var parts = line.split('|').map(function (s) { return s.trim(); }).filter(Boolean);
+    if (parts.length < 2) return;
+    var chName = parts[0];
+    var ch = null;
+    for (var i = 0; i < CHAPTERS.length; i++) {
+      if (chName.indexOf(CHAPTERS[i].name) >= 0 || chName.indexOf(CHAPTERS[i].short) >= 0 || CHAPTERS[i].name.indexOf(chName) >= 0) { ch = CHAPTERS[i]; break; }
+    }
+    rows.push({ ch: ch ? ch.id : null, name: ch ? ch.name : chName, reason: parts[1] || '', advice: parts[2] || '' });
+  });
+  return rows;
+}
+
+function renderReviewResult() {
+  var box = $('reviewResult');
+  if (!box) return;
+  var rows = reviewState.rows;
+  if (!rows || !rows.length) {
+    box.innerHTML = '<div class="card"><div class="empty">' + (reviewState.mode === 'ai' ? 'AI 未识别出明确的知识点。' : '暂无分析结果：写下本周内容或先刷几道题，再点「分析」。') + '</div></div>';
+    return;
+  }
+  var html = '<div class="card"><div class="card-title">🎯 建议回顾的知识点 ' +
+    '<span class="hint-text">' + (reviewState.mode === 'ai' ? 'AI 分析' : '本地数据分析') + '</span></div>';
+  rows.forEach(function (row, i) {
+    html += '<div class="rev-row"><div class="rev-head"><b>' + (i + 1) + '. ' + esc(row.name) + '</b></div>' +
+      '<div class="rev-reason">📌 ' + esc(row.reason) + '</div>' +
+      '<div class="rev-advice">💡 ' + esc(row.advice) + '</div>' +
+      '<div class="q-actions">' +
+      (row.ch ? '<button class="mini-btn" data-act="reviewPaper" data-ch="' + row.ch + '">📝 出题练</button>' : '') +
+      '<button class="mini-btn" data-act="quizStart" data-ch="' + (row.ch || '') + '" data-topic="' + esc(row.name) + '">💬 考我理解</button>' +
+      '</div></div>';
+  });
+  html += '</div>';
+  box.innerHTML = html;
+  renderMath();
+}
+
+/* ============ 理解测验 ============ */
+var quiz = null;
+
+function startQuiz(chId, topic) {
+  quiz = { ch: chId, topic: topic, msgs: [], round: 0, done: false, local: !apiKey() };
+  view.name = 'quiz';
+  render();
+  if (!apiKey()) {
+    var cq = chId && CONCEPT_QUESTIONS[chId];
+    if (!cq) {
+      quiz.msgs.push({ role: 'ai', text: '该知识点暂无离线概念题，配置 DeepSeek API Key 后可让 AI 出题并评判你的回答（右上角 ⚙️）。' });
+      quiz.done = true;
+      render();
+      return;
+    }
+    quiz.msgs.push({ role: 'ai', text: '「' + topic + '」概念题：' + cq.q + '（先自己组织语言回答，再点「看参考答案」对照）' });
+    render();
+  } else {
+    quiz.msgs.push({ role: 'ai', text: '正在为你出第一道理解题…' });
+    render();
+    quizTurn(null, true);
+  }
+}
+
+function renderQuiz(v) {
+  if (!quiz) { view.name = 'review'; render(); return; }
+  var msgs = quiz.msgs.map(function (m) {
+    return '<div class="qz-msg ' + m.role + '"><div class="qz-bubble">' + fmtText(m.text) + '</div></div>';
+  }).join('');
+  var inputArea = '';
+  if (quiz.done) {
+    inputArea = '<button class="btn btn-primary btn-block" data-act="backReview">← 返回复盘</button>';
+  } else if (quiz.local) {
+    var cq = quiz.ch ? CONCEPT_QUESTIONS[quiz.ch] : null;
+    if (cq) {
+      inputArea = '<div class="btn-row">' +
+        '<button class="btn btn-ghost btn-flex" data-act="quizReveal">👁 看参考答案</button>' +
+        '<button class="btn btn-primary btn-flex" data-act="quizLocalDone">✅ 我理解了</button>' +
+        '</div>';
+    }
+  } else {
+    inputArea = '<div class="qz-input"><textarea id="quizAnswer" rows="2" placeholder="写下你的理解…"></textarea>' +
+      '<button class="btn btn-primary" data-act="quizSend">发送</button></div>';
+  }
+  v.innerHTML =
+    '<div class="sub-header"><button class="icon-btn" data-act="backReview">←</button><div class="sh-title">💬 考我理解</div><div class="sh-sub">' + esc(quiz.topic) + '</div></div>' +
+    '<div class="card qz-card">' + msgs + '</div>' + inputArea;
+  renderMath();
+  var ta = $('quizAnswer');
+  if (ta) {
+    ta.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); quizSend(); }
+    });
+  }
+}
+
+function quizTurn(userText, first) {
+  var sys = '你是考研数学一老师，正在测验学生对一个知识点的理解。规则：先提一个概念理解题（不要计算题）；收到学生回答后：先简短评价理解程度（完全掌握/基本掌握/存在偏差），指出偏差，再给出正确解释，然后提下一道相关问题。共考 3 道题，第 3 次评价后给出该知识点的掌握总结（50字内）和学习建议。回答用中文，分"评价/讲解/下一题"结构。第一轮请直接提第一道题。';
+  var msgs = [{ role: 'system', content: sys }];
+  if (first) {
+    msgs.push({ role: 'user', content: '我要复习的知识点：' + quiz.topic + '。请出第一道理解题。' });
+  } else {
+    quiz.msgs.forEach(function (m) { msgs.push({ role: m.role, content: m.text }); });
+  }
+  fetch(API_BASE + '/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey() },
+    body: JSON.stringify({ model: hintModel(), messages: msgs, max_tokens: 600, temperature: 0.6 })
+  }).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function (j) {
+    var out = j.choices && j.choices[0] && j.choices[0].message ? j.choices[0].message.content : '';
+    if (!out) throw new Error('空响应');
+    if (!first) quiz.msgs.push({ role: 'user', text: userText });
+    quiz.msgs.push({ role: 'ai', text: out });
+    if (!first) {
+      quiz.round++;
+      if (quiz.round >= 3) quiz.done = true;
+    }
+    render();
+  }).catch(function (e) {
+    quiz.msgs.push({ role: 'ai', text: '⚠️ AI 测验失败（' + String(e && e.message || e) + '）。请检查网络或密钥后重试。' });
+    quiz.done = true;
+    render();
+  });
+}
+
+function quizSend() {
+  var ta = $('quizAnswer');
+  var text = ta ? ta.value.trim() : '';
+  if (!text) { toast('先写下你的理解再发送'); return; }
+  if (ta) ta.value = '';
+  quiz.msgs.push({ role: 'user', text: text });
+  quiz.msgs.push({ role: 'ai', text: '正在评价你的回答…' });
+  render();
+  quizTurn(text, false);
+}
+
 /* ============ 设置 ============ */
 function openSettings() {
   $('setKey').value = apiKey();
@@ -678,7 +976,7 @@ function submitPaper() {
     var st = paper.answers[q.id];
     if (st === undefined) return;
     var r = p[q.id] || { r: 0, w: 0 };
-    if (st) { score += q.pts; r.r++; advanceSrsRecord(r); } else { r.w++; resetSrsRecord(r); }
+    if (st) { score += q.pts; r.r++; r.last = todayStr(); advanceSrsRecord(r); } else { r.w++; r.last = todayStr(); r.lastW = todayStr(); resetSrsRecord(r); }
     p[q.id] = r;
   });
   saveLS(LS_PROGRESS, p);
@@ -705,7 +1003,7 @@ function practiceAnswer(ok) {
   var p = loadLS(LS_PROGRESS, {});
   var q = practice.list[practice.idx];
   var r = p[q.id] || { r: 0, w: 0 };
-  if (ok) { r.r++; advanceSrsRecord(r); } else { r.w++; resetSrsRecord(r); }
+  if (ok) { r.r++; r.last = todayStr(); advanceSrsRecord(r); } else { r.w++; r.last = todayStr(); r.lastW = todayStr(); resetSrsRecord(r); }
   p[q.id] = r;
   saveLS(LS_PROGRESS, p);
   practice.revealed[q.id] = true;
@@ -727,6 +1025,7 @@ function handleClick(e) {
   var tab = el.dataset.tab;
   if (tab) {
     if (tab === 'math') { view = { name: 'home', param: null }; render(); }
+    else if (tab === 'review') { view = { name: 'review', param: null }; reviewState.rows = null; render(); }
     else if (tab === 'english') { view = { name: 'placeholder', param: 'english' }; render(); }
     else if (tab === 'major') { view = { name: 'placeholder', param: 'major' }; render(); }
     else if (tab === 'wrong') { view = { name: 'wrong', param: null }; render(); }
@@ -762,6 +1061,7 @@ function handleClick(e) {
       var p4 = loadLS(LS_PROGRESS, {});
       var r4 = p4[el.dataset.id] || { r: 0, w: 0 };
       r4.r++;
+      r4.last = todayStr();
       advanceSrsRecord(r4);
       p4[el.dataset.id] = r4;
       saveLS(LS_PROGRESS, p4);
@@ -775,6 +1075,8 @@ function handleClick(e) {
       var p5 = loadLS(LS_PROGRESS, {});
       var r6 = p5[el.dataset.id] || { r: 0, w: 0 };
       r6.w++;
+      r6.last = todayStr();
+      r6.lastW = todayStr();
       resetSrsRecord(r6);
       p5[el.dataset.id] = r6;
       saveLS(LS_PROGRESS, p5);
@@ -798,6 +1100,31 @@ function handleClick(e) {
     case 'hintP':
       var qp = practice.list[practice.idx];
       showHintBox('hintslot', qp.id, qp, qp.ch);
+      break;
+    case 'analyzeWeek': analyzeWeek(); break;
+    case 'reviewPaper':
+      view.param = el.dataset.ch;
+      genPaper(Math.floor(Math.random() * 2147483647));
+      break;
+    case 'quizStart': startQuiz(el.dataset.ch || null, el.dataset.topic || ''); break;
+    case 'quizSend': quizSend(); break;
+    case 'quizReveal':
+      var cq = quiz.ch ? CONCEPT_QUESTIONS[quiz.ch] : null;
+      if (cq) {
+        quiz.msgs.push({ role: 'ai', text: '参考答案：' + cq.a });
+        quiz.done = true;
+        render();
+      }
+      break;
+    case 'quizLocalDone':
+      quiz.msgs.push({ role: 'ai', text: '✅ 很好！如果表述与参考答案有出入，说明这个点还需要再巩固，建议明天再来考一次（去错题本或章节里再练几题）。' });
+      quiz.done = true;
+      render();
+      break;
+    case 'backReview':
+      view = { name: 'review', param: null };
+      quiz = null;
+      render();
       break;
   }
 }

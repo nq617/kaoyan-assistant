@@ -227,3 +227,31 @@ button { font-family: inherit; color: inherit; }
 .srs-wait { background: #fef3c7; color: #b45309; }
 .srs-done { background: #e5f8f0; color: var(--ok); }
 .due-card { border-color: rgba(239, 68, 68, .35); }
+
+/* ============ 每周复习回顾 / 理解测验 ============ */
+.week-input {
+  width: 100%; min-height: 96px; background: var(--card2); color: var(--text);
+  border: 1.5px solid var(--border); border-radius: 12px;
+  padding: 11px 12px; font-size: 14px; font-family: inherit; outline: none; line-height: 1.7; resize: vertical;
+}
+.week-input:focus { border-color: var(--primary); }
+.rev-row { border-bottom: 1px dashed var(--border); padding: 10px 0; }
+.rev-row:last-child { border-bottom: none; }
+.rev-head { font-size: 14.5px; font-weight: 800; }
+.rev-reason { font-size: 12.5px; color: var(--muted); margin-top: 4px; line-height: 1.6; }
+.rev-advice { font-size: 12.5px; color: var(--ok); margin-top: 3px; line-height: 1.6; }
+.qz-card { max-height: 56vh; overflow-y: auto; }
+.qz-msg { display: flex; margin-bottom: 10px; }
+.qz-msg.user { justify-content: flex-end; }
+.qz-bubble {
+  max-width: 86%; padding: 9px 13px; border-radius: 14px; font-size: 14px; line-height: 1.7;
+}
+.qz-msg.ai .qz-bubble { background: var(--card2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+.qz-msg.user .qz-bubble { background: linear-gradient(135deg, var(--primary), var(--primary-2)); color: #fff; border-bottom-right-radius: 4px; white-space: pre-wrap; }
+.qz-input { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
+.qz-input textarea {
+  flex: 1; resize: none; min-height: 46px; max-height: 110px;
+  background: var(--card2); color: var(--text); border: 1.5px solid var(--border);
+  border-radius: 12px; padding: 10px 12px; font-size: 15px; font-family: inherit; outline: none;
+}
+.qz-input textarea:focus { border-color: var(--primary); }
