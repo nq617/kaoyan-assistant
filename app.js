@@ -38,6 +38,48 @@ var DEFAULT_SETTINGS = {
   theme: 'auto'
 };
 
+/* ============ 专业课 811 资源库（西安电子科技大学） ============ */
+var MAJOR_DATA = {
+  title: '西电 811 信号与系统、电路',
+  exam: '信号与系统 75 分 + 电路 75 分，总分 150，闭卷 180 分钟',
+  syllabus: {
+    url: 'https://gr.xidian.edu.cn/info/1074/17314.htm',
+    note: '官方大纲：西电研究生院官网「2026年自命题科目考试大纲」；本地：D:\\ai\\811信号与系统、电路.pdf（与官网逐字一致）'
+  },
+  zhenti: {
+    intro: '只做最近 8 年（2019–2026），优先做带答案的年份，掐 180 分钟全真模拟，做完对照答案并听视频讲解。',
+    years: [
+      { y: '2024', note: '✅ 题目+答案齐全，必做', where: '研/811/西电821 811 25 在这里/电子材料/西电821、811真题/811.821真题（分年份）/24 真题加答案/' },
+      { y: '2023', note: '✅ 必做', where: '研/811/西电821 811 25 在这里/电子材料/西电821、811真题/811.821真题（分年份）/真题23/' },
+      { y: '2022', note: '✅ 必做', where: '研/811/西电/811真题与答案/（含 2022年811真题参考答案.pdf）' },
+      { y: '2019–2021、2025、2026', note: '🟡 有就做；缺的年份网上搜「西电811真题」', where: '研/811/西电/811真题与答案/ 与 研/811/26考研西安电子科大811，821信号与系统、电路真题（待更新）/西电811821/真题/' }
+    ],
+    extra: [
+      { t: '真题视频逐题讲解（西电811）', where: '研/811/西电（多个机构）/821和811真题加解析加讲解/811,821真题讲解/西电811视频详细讲解/' },
+      { t: '晋城考研 811 定向班：真题与答案 + 真题讲解', where: '研/811/晋城考研西电 811821/A全程班/' }
+    ]
+  },
+  keti: [
+    { subject: '信号', t: '吴大正《信号与线性系统分析》第4版课后题（811 指定教材）', note: '一轮/二轮主刷', where: '本地 D:\\BaiduNetdiskDownload：信号与线性系统分析习题全解(吴大正第4版).pdf、信号书后题打印.pdf' },
+    { subject: '信号', t: '风中醉风 章末习题及答案（第1–7章）', note: '跟课配套', where: '研/澄潇宇数学大观/26风中醉风/章末习题及答案/' },
+    { subject: '信号', t: '信号与系统本科题库（含答案详解）', where: '研/811/西电821 811 25 在这里/西安电子科技大学811，821信号与系统，电路/西电811821/题库/' },
+    { subject: '信号', t: '西电本科信号习题册', where: '研/811/西电821 811 25 在这里/电子材料/821、811参考课本/西电本科信号习题册/' },
+    { subject: '电路', t: '电路书后题打印版', note: '配合李小平课刷', where: '本地 D:\\BaiduNetdiskDownload\\电路书后题打印.pdf' },
+    { subject: '电路', t: '电路重点课后题整理（西电划重点版）', note: '时间紧优先刷这个', where: '研/811/26考研西安电子科大811，821信号与系统、电路真题（待更新）/西电811821/参考书/电路重点课后题整理/' },
+    { subject: '电路', t: '西电《电路基础》习题册与答案（三册均带详解）', where: '研/811/西电（多个机构）/其它习题推荐/电路/3．西电通院考研之《电路》资料/②西电《电路基础》习题册与答案/' },
+    { subject: '电路', t: '《电路》经典题库', where: '研/811/西电821 811 25 在这里/电子材料/821、811参考课本/西电本科电路期末试题及答案/《电路》经典题库/' },
+    { subject: '检测', t: '期末题做阶段检测：电路（2000-2010）、信号（2002-2010）', where: '研/811/西电821 811 25 在这里/电子材料/821、811参考课本/张永瑞 电路信号与系统考试辅导书等多个文件/2、电路ppt、视频、课本、课后答案、习题集/' }
+  ],
+  videos: [
+    { t: '电路：李小平《电路分析基础》B站 103 讲', link: 'https://www.bilibili.com/video/BV1J741157zD', note: '必看 86 讲清单：D:\\ai\\811电路-李小平103讲-观看清单.md' },
+    { t: '信号：风中醉风 课程【基础+强化】', note: '强化必看 22 集清单：D:\\ai\\811信号-风中醉风强化课-观看清单.md（网盘：研/澄潇宇数学大观/26风中醉风/）' }
+  ],
+  books: [
+    '信号：吴大正《信号与线性系统分析》第4版 + 张永瑞《电路信号与系统考试辅导书》',
+    '电路：张永瑞《电路分析基础》+ 李小平课配套课件（网盘 00【课件！】文件夹）'
+  ]
+};
+
 /* ============ 数据层 ============ */
 var memoryData = null;
 
@@ -1198,6 +1240,48 @@ function renderSchools() {
   renderSchoolList();
 }
 
+function renderMajor() {
+  var el = document.getElementById('majorContent');
+  if (!el) return;
+  var m = MAJOR_DATA, h = '';
+  h += '<div class="card"><div class="card-title">📚 ' + esc(m.title) + '</div>'
+    + '<p class="hint-text">' + esc(m.exam) + '</p>'
+    + '<p class="hint-text">📄 大纲：<a href="' + m.syllabus.url + '" target="_blank" rel="noopener">西电研究生院官网（2026 自命题考试大纲）</a><br>' + esc(m.syllabus.note) + '</p></div>';
+
+  h += '<div class="card"><div class="card-title">🎯 真题（最近 8 年）</div>'
+    + '<p class="hint-text">' + esc(m.zhenti.intro) + '</p><div class="major-list">';
+  m.zhenti.years.forEach(function (y) {
+    h += '<div class="major-item"><b>' + esc(y.y) + '</b> <span class="tag">' + esc(y.note) + '</span>'
+      + '<div class="major-where">📁 ' + esc(y.where) + '</div></div>';
+  });
+  m.zhenti.extra.forEach(function (e) {
+    h += '<div class="major-item"><b>▶ ' + esc(e.t) + '</b>'
+      + '<div class="major-where">📁 ' + esc(e.where) + '</div></div>';
+  });
+  h += '</div></div>';
+
+  h += '<div class="card"><div class="card-title">📝 课后题（精选）</div><div class="major-list">';
+  m.keti.forEach(function (k) {
+    h += '<div class="major-item"><b>[' + esc(k.subject) + '] ' + esc(k.t) + '</b>'
+      + (k.note ? ' <span class="tag">' + esc(k.note) + '</span>' : '')
+      + '<div class="major-where">📁 ' + esc(k.where) + '</div></div>';
+  });
+  h += '</div></div>';
+
+  h += '<div class="card"><div class="card-title">🎬 课程观看清单</div><div class="major-list">';
+  m.videos.forEach(function (v) {
+    h += '<div class="major-item"><b>' + (v.link ? '<a href="' + v.link + '" target="_blank" rel="noopener">' + esc(v.t) + '</a>' : esc(v.t)) + '</b>'
+      + (v.note ? '<div class="major-where">📄 ' + esc(v.note) + '</div>' : '') + '</div>';
+  });
+  h += '</div></div>';
+
+  h += '<div class="card"><div class="card-title">📖 参考教材</div><div class="major-list">';
+  m.books.forEach(function (b) { h += '<div class="major-item">· ' + esc(b) + '</div>'; });
+  h += '</div></div>';
+
+  el.innerHTML = h;
+}
+
 function schoolWebSearch(engine) {
   var input = document.getElementById('schoolSearch');
   var q = input ? input.value.trim() : '';
@@ -1338,6 +1422,7 @@ function switchTab(tab) {
   if (tab === 'mistakes') renderMistakes();
   if (tab === 'settings') renderSettings();
   if (tab === 'schools') renderSchools();
+  if (tab === 'major') renderMajor();
   if (tab === 'today') renderSubjects();
   if (tab === 'focus') renderFocus();
   window.scrollTo({ top: 0 });
