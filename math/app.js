@@ -208,6 +208,10 @@ function questionBodyHTML(q, revealed) {
   }
   return opts + ans;
 }
+function qImgHTML(q) {
+  if (!q.img) return '';
+  return '<div class="q-imgwrap"><img class="q-img" src="' + esc(q.img) + '" alt="原题图" loading="lazy" onclick="this.classList.toggle(\'q-img-full\')"></div>';
+}
 function hintBoxHTML(qid) {
   var cache = loadLS(LS_HINTS, {});
   var cached = cache[qid];
@@ -314,7 +318,7 @@ function renderHome(v) {
     ? '选一个章节（或全卷 150 分）→ 按 811 大纲权重出卷（电路 75 分 + 信号与系统 75 分）。'
     : '选一个章节（或全卷 150 分）→ 按「数学一出题分值表（2021-2026）」权重出卷。题目来自大观园题库（真题·模拟）。';
   var ruleHint = isPro
-    ? '出卷规则：优先真题，约 20% 穿插课后题（邱关源/吴大正经典题）；真题持续补充中。做题卡住时点「💡 思路提示」。'
+    ? '出卷规则：优先真题（2019–2025 已收录，含原卷图+官方解析），约 20% 穿插课后题（邱关源/吴大正/王松林经典题）。做题卡住时点「💡 思路提示」。真题套卷见下方「历年真题套卷」。'
     : '出卷规则：微分方程之前 100% 真题；微分方程及之后、线代、概率 ≈ 8 成真题 + 2 成模拟；二重积分不进卷子（保留 ' + (chapterById('doubleint') ? chapterById('doubleint').count : 10) + ' 道参考题）。做题卡住时点「💡 思路提示」。';
   var refCard = isPro ? '' :
     '<div class="card ref-card" data-act="openRef">' +
@@ -344,7 +348,7 @@ function renderHome(v) {
         '</div>';
     }).join('');
     return '<div class="card"><div class="card-title">📋 历年真题套卷（题卡模式）</div>' +
-      '<p class="hint-text">真题原文是视频画面，做成题卡：每张卡写自己的作答和思路 → 点视频链接直达对应讲解分P → 会了就打勾。进度自动保存。</p>' +
+      '<p class="hint-text">2019–2023 真题：题干+原卷图+官方答案解析，逐题作答；2025/2026：视频逐题讲解题卡。笔记与掌握状态自动保存。</p>' +
       rows + '</div>';
   })();
 
@@ -375,9 +379,17 @@ function examById(id) {
 }
 /* 单视频直接 ?p=n；双视频（如 2026）：信号部分在视频①，电路部分在视频②（分P 从 1 起） */
 function examItemLink(exam, it) {
+  if (!exam.video) return '';
   if (!exam.video2) return exam.video + '?p=' + it.p;
   var isCircuit = it.name.indexOf('电路') === 0;
   return isCircuit ? exam.video2 + '?p=' + Math.max(1, it.p - 5) : exam.video + '?p=' + it.p;
+}
+function proFind(qid) {
+  var banks = [(window.PRO_BANK_EC && window.PRO_BANK_EC.questions) || [], (window.PRO_BANK_SS && window.PRO_BANK_SS.questions) || []];
+  for (var b = 0; b < banks.length; b++) {
+    for (var i = 0; i < banks[b].length; i++) if (banks[b][i].id === qid) return banks[b][i];
+  }
+  return null;
 }
 function examRowsHTML() {
   var exams = window.PRO_EXAMS || [];
@@ -391,7 +403,7 @@ function examRowsHTML() {
     var pct = Math.round(ok / Math.max(1, (e.items || []).length) * 100);
     return '<div class="exam-row" data-act="openExam" data-id="' + e.id + '">' +
       '<div class="ch-left"><div class="ch-name">📜 ' + esc(e.title) + '</div>' +
-      '<div class="ch-meta">' + (e.items || []).length + ' 张题卡 · 视频逐题讲解</div></div>' +
+      '<div class="ch-meta">' + (e.items || []).length + ' 张题卡 · ' + (e.video ? '视频逐题讲解' : '真题原题+答案解析') + '</div></div>' +
       '<div class="ch-right"><div class="ch-done">掌握 ' + ok + '/' + (e.items || []).length + '</div>' +
       '<div class="pbar"><div class="pbar-fill" style="width:' + pct + '%"></div></div>' +
       '<div class="ch-rate">' + pct + '%</div></div>' +
@@ -408,21 +420,36 @@ function renderExam(v) {
   if (!exam) { view = { name: 'exams', param: null }; render(); return; }
   var notes = loadLS(LS_EXAMS, {});
   var exNotes = notes[exam.id] || {};
-  var top = '<a class="btn btn-primary btn-flex" target="_blank" rel="noopener" href="' + exam.video + '">▶ 讲解视频①（填空+信号）</a>' +
-    (exam.video2 ? '<a class="btn btn-ghost btn-flex" target="_blank" rel="noopener" href="' + exam.video2 + '">▶ 讲解视频②（电路）</a>' : '<a class="btn btn-ghost btn-flex" target="_blank" rel="noopener" href="' + exam.video + '">▶ 打开整集</a>');
+  var top = exam.video
+    ? ('<a class="btn btn-primary btn-flex" target="_blank" rel="noopener" href="' + exam.video + '">▶ 讲解视频①（填空+信号）</a>' +
+      (exam.video2 ? '<a class="btn btn-ghost btn-flex" target="_blank" rel="noopener" href="' + exam.video2 + '">▶ 讲解视频②（电路）</a>' : '<a class="btn btn-ghost btn-flex" target="_blank" rel="noopener" href="' + exam.video + '">▶ 打开整集</a>'))
+    : '';
   var cards = (exam.items || []).map(function (it) {
     var key = exam.id + '-' + it.n;
     var st = exNotes[key] || {};
+    var q = it.qid ? proFind(it.qid) : null;
+    var body = '';
+    if (q) {
+      body = '<div class="q-text">' + fmtText(q.q) + '</div>' + qImgHTML(q) +
+        '<div class="q-actions">' +
+        (st.rev ? '' : '<button class="mini-btn" data-act="examReveal" data-exam="' + exam.id + '" data-n="' + it.n + '">👁 查看答案</button>') +
+        '</div>' +
+        (st.rev ? '<div class="answer"><div class="ans-label">✅ 答案：' + fmtText(q.a || '（官方答案缺失）') + '</div>' +
+          (q.s ? '<div class="ans-s">📖 解析：' + fmtText(q.s) + '</div>' : '') + '</div>' : '') +
+        (exam.video ? '<a class="video-link" target="_blank" rel="noopener" href="' + examItemLink(exam, it) + '">▶ 视频讲解 分P ' + it.p + '</a>' : '');
+    } else if (exam.video && it.p) {
+      body = '<a class="video-link" target="_blank" rel="noopener" href="' + examItemLink(exam, it) + '">▶ 直达讲解 分P ' + it.p + '</a>';
+    }
     return '<div class="card exam-card">' +
       '<div class="card-title row-between"><span>第 ' + it.n + ' 题 · ' + esc(it.name) + '</span>' +
       '<button class="mini-btn' + (st.ok ? ' on' : '') + '" data-act="examMark" data-exam="' + exam.id + '" data-n="' + it.n + '">' + (st.ok ? '✓ 已掌握' : '□ 标为掌握') + '</button></div>' +
-      '<a class="video-link" target="_blank" rel="noopener" href="' + examItemLink(exam, it) + '">▶ 直达讲解 分P ' + it.p + '</a>' +
+      body +
       '<textarea class="exam-note" data-exam="' + exam.id + '" data-n="' + it.n + '" placeholder="写下你的答案 / 思路 / 卡住的地方…">' + esc(st.note || '') + '</textarea>' +
       '</div>';
   }).join('');
   v.innerHTML = '<div class="sub-header"><button class="icon-btn" data-act="backExams">←</button><div class="sh-title">' + esc(exam.title) + '</div><div class="sh-sub">' + (exam.items || []).length + ' 题</div></div>' +
-    '<p class="hint-text">' + esc(exam.note || '') + ' 找不到对应分P时，点上方整集链接按题号定位。</p>' +
-    '<div class="btn-row">' + top + '</div>' +
+    '<p class="hint-text">' + esc(exam.note || '') + (exam.video ? ' 找不到对应分P时，点上方整集链接按题号定位。' : '') + '</p>' +
+    (top ? '<div class="btn-row">' + top + '</div>' : '') +
     cards;
   var tas = v.querySelectorAll('.exam-note');
   for (var i = 0; i < tas.length; i++) {
@@ -473,13 +500,18 @@ function genFullPaper(seed, done) {
     var rnd = mulberry32(seed);
     var totalW = 0;
     acts.forEach(function (c) { totalW += c.weight; });
-    function weightedChapter() {
-      var r = rnd() * totalW;
-      for (var i = 0; i < acts.length; i++) { r -= acts[i].weight; if (r <= 0) return acts[i]; }
-      return acts[acts.length - 1];
+    function weightedChapter(part) {
+      var pool = part ? acts.filter(function (c) { return (c.id.indexOf('ss-') === 0) === (part === '信号'); }) : acts;
+      if (!pool.length) return null;
+      var tw = 0;
+      pool.forEach(function (c) { tw += c.weight; });
+      var r = rnd() * tw;
+      for (var i = 0; i < pool.length; i++) { r -= pool[i].weight; if (r <= 0) return pool[i]; }
+      return pool[pool.length - 1];
     }
-    function pickOne(ch, qt) {
-      var pool = byCh(ch.id).filter(function (q) { return q.qt === qt; });
+    function partOf(q) { return q.ch.indexOf('ss-') === 0 ? '信号' : '电路'; }
+    function pickOne(ch, qt, part) {
+      var pool = byCh(ch.id).filter(function (q) { return q.qt === qt && (!part || partOf(q) === part); });
       if (!pool.length) return null;
       var real = pool.filter(function (q) { return q.t === '真题'; });
       var mock = pool.filter(function (q) { return q.t !== '真题'; });
@@ -487,18 +519,19 @@ function genFullPaper(seed, done) {
       if (real.length) return real[Math.floor(rnd() * real.length)];
       return pool[Math.floor(rnd() * pool.length)];
     }
-    function pickAny(qt) {
+    function pickAny(qt, part) {
       var pool = [];
-      acts.forEach(function (c) { byCh(c.id).forEach(function (q) { if (q.qt === qt) pool.push(q); }); });
+      acts.forEach(function (c) { byCh(c.id).forEach(function (q) { if (q.qt === qt && (!part || partOf(q) === part)) pool.push(q); }); });
       if (!pool.length) return null;
       return pool[Math.floor(rnd() * pool.length)];
     }
     var structure = [];
     if (subject === 'pro') {
-      // 专业课 811 全卷：6 选择(30) + 8 填空(40) + 8 解答(80) = 150 分
-      for (var i = 0; i < 6; i++) structure.push({ qt: '选择', pts: 5 });
-      for (var j = 0; j < 8; j++) structure.push({ qt: '填空', pts: 5 });
-      for (var k = 0; k < 8; k++) structure.push({ qt: '解答', pts: 10 });
+      // 专业课 811 全卷（还原真实卷面）：信号 填空8×4 + 计算4(11+10+11+11)；电路 填空9×5 + 计算4(8+9+5+8) = 150 分
+      for (var i = 0; i < 8; i++) structure.push({ qt: '填空', pts: 4, part: '信号' });
+      for (var j = 0; j < 9; j++) structure.push({ qt: '填空', pts: 5, part: '电路' });
+      [11, 10, 11, 11].forEach(function (p) { structure.push({ qt: '解答', pts: p, part: '信号' }); });
+      [8, 9, 5, 8].forEach(function (p) { structure.push({ qt: '解答', pts: p, part: '电路' }); });
     } else {
       // 数学全卷：10 选择(50) + 10 解答(100) = 150 分
       for (var i2 = 0; i2 < 10; i2++) structure.push({ qt: '选择', pts: 5 });
@@ -506,9 +539,9 @@ function genFullPaper(seed, done) {
     }
     var picks = [];
     structure.forEach(function (slot) {
-      var ch = weightedChapter();
-      var q = pickOne(ch, slot.qt) || pickAny(slot.qt);
-      if (q) picks.push(q);
+      var ch = weightedChapter(slot.part);
+      var q = (ch ? pickOne(ch, slot.qt, slot.part) : null) || pickAny(slot.qt, slot.part);
+      if (q) picks.push(Object.assign({}, q, { pts: slot.pts })); // 按卷面分值，不改原题库
     });
     done({ kind: 'full', ch: null, questions: picks, sum: picks.reduce(function (s, q) { return s + q.pts; }, 0) });
   }).catch(function (e) { toast(String(e)); });
@@ -518,7 +551,7 @@ function genFullPaper(seed, done) {
 function renderPaper(v) {
   var paper = currentPaper;
   if (!paper) { view.name = 'home'; render(); return; }
-  var title = paper.kind === 'full' ? '全卷模拟（150 分制）' : paper.ch.name;
+  var title = paper.kind === 'full' ? (subject === 'pro' ? '全卷模拟（811 真题卷面 · 150 分制）' : '全卷模拟（150 分制）') : paper.ch.name;
   var list = paper.questions.map(function (q, i) {
     var st = paper.answers[q.id];
     var mark = st === undefined ? '' : (st ? '<span class="mark mark-ok">✓ 对</span>' : '<span class="mark mark-no">✗ 错</span>');
@@ -527,7 +560,7 @@ function renderPaper(v) {
         '<span class="tag tag-qt">' + q.qt + '</span>' +
         '<span class="q-pts">' + q.pts + ' 分</span>' + tagHTML(q) + mark +
         '<span class="q-src">' + srcLabel(q) + '</span></div>' +
-      '<div class="q-text">' + fmtText(q.q) + '</div>' +
+      '<div class="q-text">' + fmtText(q.q) + '</div>' + qImgHTML(q) +
       '<div class="q-answer" id="qans-' + i + '">' + questionBodyHTML(q, paper.revealed[q.id] === true) + '</div>' +
       '<div class="q-actions">' +
         (paper.revealed[q.id] ? '' : '<button class="mini-btn" data-act="reveal" data-i="' + i + '">👁 查看答案</button>') +
@@ -577,7 +610,7 @@ function renderChapterPractice(v) {
     '<div class="pbar big"><div class="pbar-fill" style="width:' + Math.round((practice.idx) / total * 100) + '%"></div></div>' +
     '<div class="card">' +
       '<div class="q-head"><span class="tag tag-qt">' + q.qt + '</span><span class="q-pts">' + q.pts + ' 分</span>' + tagHTML(q) + '<span class="q-src">' + srcLabel(q) + '</span></div>' +
-      '<div class="q-text big">' + fmtText(q.q) + '</div>' +
+      '<div class="q-text big">' + fmtText(q.q) + '</div>' + qImgHTML(q) +
       '<div id="qans">' + questionBodyHTML(q, revealed) + '</div>' +
       '<div class="q-actions big-actions">' +
         (revealed ? '' : '<button class="btn btn-ghost btn-flex" data-act="revealP">👁 查看答案</button>') +
@@ -652,7 +685,7 @@ function renderWrong(v) {
           '<div class="q-head"><span class="ch-badge">' + esc(ch.short) + '</span>' + tagHTML(q) +
             '<span class="wrong-count">错 ' + pr.w + ' 次</span>' +
             '<span class="srs-stage ' + stageCls + '">' + esc(stageText) + '</span></div>' +
-          '<div class="q-text">' + fmtText(q.q) + '</div>' +
+          '<div class="q-text">' + fmtText(q.q) + '</div>' + qImgHTML(q) +
           '<div class="q-answer">' + questionBodyHTML(q, true) + '</div>' +
           '<div class="q-actions">' +
             '<button class="mini-btn" data-act="hint" data-qid="' + q.id + '">💡 思路提示</button>' +
@@ -1260,6 +1293,18 @@ function handleClick(e) {
       en[k].ok = !en[k].ok;
       all[exId] = en;
       saveLS(LS_EXAMS, all);
+      render();
+      break;
+    }
+    case 'examReveal': {
+      var exId2 = el.dataset.exam, n2 = el.dataset.n;
+      var all2 = loadLS(LS_EXAMS, {});
+      var en2 = all2[exId2] || {};
+      var k2 = exId2 + '-' + n2;
+      en2[k2] = en2[k2] || {};
+      en2[k2].rev = true;
+      all2[exId2] = en2;
+      saveLS(LS_EXAMS, all2);
       render();
       break;
     }

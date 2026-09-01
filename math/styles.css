@@ -79,6 +79,9 @@ button { font-family: inherit; color: inherit; }
 .video-link { display: inline-flex; align-items: center; gap: 6px; margin: 6px 0 10px; font-size: 12.5px; font-weight: 700; color: var(--primary); text-decoration: none; background: color-mix(in srgb, var(--primary) 8%, transparent); border-radius: 9px; padding: 6px 12px; }
 .exam-note { width: 100%; min-height: 84px; box-sizing: border-box; resize: vertical; border: 1px solid var(--border); border-radius: 12px; background: var(--card2); color: var(--text); font: inherit; font-size: 14px; line-height: 1.7; padding: 10px 12px; }
 .exam-note:focus { outline: none; border-color: var(--primary); }
+.q-imgwrap { margin: 8px 0; }
+.q-img { max-width: 100%; border-radius: 10px; border: 1px solid var(--border); display: block; cursor: zoom-in; }
+.q-img.q-img-full { max-width: 100%; }
 .ch-left { flex: 1; min-width: 0; }
 .ch-name { font-size: 15px; font-weight: 700; }
 .ch-meta { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
