@@ -394,3 +394,5 @@ canvas { width: 100%; }
 .major-where { margin-top: 4px; font-size: 12px; color: var(--muted, #8a8a8a); word-break: break-all; }
 .major-item .tag { display: inline-block; margin: 2px 4px 2px 0; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: #f59e0b22; color: #f59e0b; }
 .major-item a { color: #0ea5e9; text-decoration: none; }
+
+.ver-tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #6366f122; color: var(--accent, #6366f1); margin-right: 4px; vertical-align: middle; }

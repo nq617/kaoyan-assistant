@@ -1441,7 +1441,14 @@ function switchTab(tab) {
   if (tab === 'mistakes') renderMistakes();
   if (tab === 'settings') renderSettings();
   if (tab === 'schools') renderSchools();
-  if (tab === 'major') renderMajor();
+  if (tab === 'major') {
+    try { renderMajor(); }
+    catch (err) {
+      var mc = document.getElementById('majorContent');
+      if (mc) mc.innerHTML = '<div class="card"><div class="card-title">⚠️ 页面渲染出错</div>'
+        + '<p class="hint-text">错误信息：' + esc(String((err && err.message) || err)) + '<br>请截图反馈，或改用最新版本（顶部应显示 v4）。</p></div>';
+    }
+  }
   if (tab === 'today') renderSubjects();
   if (tab === 'focus') renderFocus();
   window.scrollTo({ top: 0 });

@@ -1,6 +1,6 @@
 /* 考研学习计划助手 - Service Worker：离线缓存 */
-/* 升级应用时请把 CACHE 版本号 +1（如 kaoyan-v4） */
-var CACHE = 'kaoyan-v3';
+/* 升级应用时请把 CACHE 版本号 +1（如 kaoyan-v5） */
+var CACHE = 'kaoyan-v4';
 var ASSETS = [
   './',
   './index.html',
