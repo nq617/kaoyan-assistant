@@ -1,5 +1,5 @@
 /* 我的 AI 助手 - Service Worker（离线外壳 + 可安装性） */
-var CACHE = 'aichat-v1';
+var CACHE = 'aichat-v2';
 var ASSETS = [
   './',
   './index.html',

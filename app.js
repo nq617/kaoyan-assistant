@@ -52,7 +52,18 @@ var MAJOR_DATA = {
       { y: '2024', note: '✅ 题目+答案齐全，必做', where: '研/811/西电821 811 25 在这里/电子材料/西电821、811真题/811.821真题（分年份）/24 真题加答案/' },
       { y: '2023', note: '✅ 必做', where: '研/811/西电821 811 25 在这里/电子材料/西电821、811真题/811.821真题（分年份）/真题23/' },
       { y: '2022', note: '✅ 必做', where: '研/811/西电/811真题与答案/（含 2022年811真题参考答案.pdf）' },
-      { y: '2019–2021、2025、2026', note: '🟡 有就做；缺的年份网上搜「西电811真题」', where: '研/811/西电/811真题与答案/ 与 研/811/26考研西安电子科大811，821信号与系统、电路真题（待更新）/西电811821/真题/' }
+      { y: '2019–2021', note: '🟡 网盘文件夹里有就做', where: '研/811/西电/811真题与答案/ 与 研/811/26考研西安电子科大811，821信号与系统、电路真题（待更新）/西电811821/真题/' }
+    ],
+    recent: [
+      { y: '2026', note: '✅ 网上有逐题精讲（含回忆版题目），必看', links: [
+        { t: '水木观畴：2026 西电811真题逐题精讲（信号+电路）', url: 'https://www.bilibili.com/video/BV1iFrMBSEL4/' },
+        { t: '西电研梦：西电26年通信工程学院811真题讲解', url: 'https://www.bilibili.com/video/BV1JMVN6JERj/' },
+        { t: '西电电子通信考研：26西电811/821对答案', url: 'https://www.bilibili.com/video/BV1iwqSBREx7/' }
+      ] },
+      { y: '2025', note: '🟡 811 完整版暂无公开；用 821 真题练习（信号部分与 811 同大纲）', links: [
+        { t: '通信考研小马哥：25西电821信号部分真题及解析', url: 'https://www.sohu.com/a/961329601_120179046' },
+        { t: 'B站：2025西电821电路+信号真题讲解', url: 'https://www.bilibili.com/video/BV1RMkQYmErn/' }
+      ] }
     ],
     extra: [
       { t: '真题视频逐题讲解（西电811）', where: '研/811/西电（多个机构）/821和811真题加解析加讲解/811,821真题讲解/西电811视频详细讲解/' },
@@ -1254,6 +1265,13 @@ function renderMajor() {
   m.zhenti.years.forEach(function (y) {
     h += '<div class="major-item"><b>' + esc(y.y) + '</b> <span class="tag">' + esc(y.note) + '</span>'
       + '<div class="major-where">📁 ' + esc(y.where) + '</div></div>';
+  });
+  m.zhenti.recent.forEach(function (r) {
+    h += '<div class="major-item"><b>🌐 ' + esc(r.y) + ' 年真题（线上来源）</b> <span class="tag">' + esc(r.note) + '</span>';
+    r.links.forEach(function (l) {
+      h += '<div class="major-where">🔗 <a href="' + l.url + '" target="_blank" rel="noopener">' + esc(l.t) + '</a></div>';
+    });
+    h += '</div>';
   });
   m.zhenti.extra.forEach(function (e) {
     h += '<div class="major-item"><b>▶ ' + esc(e.t) + '</b>'
