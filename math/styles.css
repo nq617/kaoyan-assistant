@@ -93,6 +93,7 @@ button { font-family: inherit; color: inherit; }
 .tag-real { background: #e0e7ff; color: #4338ca; }
 .tag-mock { background: #fef3c7; color: #b45309; }
 .tag-ref { background: #dbeafe; color: #1d4ed8; }
+.tag-ex { background: #ede9fe; color: #6d28d9; }
 .tag-qt { background: var(--card2); color: var(--muted); border: 1px solid var(--border); }
 .opts { margin: 10px 0 4px; display: flex; flex-direction: column; gap: 6px; }
 .opt { background: var(--card2); border-radius: 10px; padding: 8px 12px; font-size: 14px; }

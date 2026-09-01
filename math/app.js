@@ -15,27 +15,51 @@ var API_BASE = 'https://api.deepseek.com';
 
 /* ============ 章节 ============ */
 var CHAPTERS = window.MATH_CHAPTERS || [];
+var PRO_CHAPTERS = [];
+var subject = 'math'; // 'math' | 'pro'
 function chapterById(id) {
   for (var i = 0; i < CHAPTERS.length; i++) if (CHAPTERS[i].id === id) return CHAPTERS[i];
+  for (var j = 0; j < PRO_CHAPTERS.length; j++) if (PRO_CHAPTERS[j].id === id) return PRO_CHAPTERS[j];
   return null;
 }
-function activeChapters() { return CHAPTERS.filter(function (c) { return !c.ref; }); }
+function activeChapters() {
+  var list = subject === 'pro' ? PRO_CHAPTERS : CHAPTERS;
+  return list.filter(function (c) { return !c.ref; });
+}
+function isProCh(ch) { return ch.indexOf('ec-') === 0 || ch.indexOf('ss-') === 0; }
+function proLoaded() { return !!window.PRO_BANK_EC && !!window.PRO_BANK_SS; }
+function buildProChapters() {
+  if (proLoaded()) PRO_CHAPTERS = window.PRO_BANK_EC.chapters.concat(window.PRO_BANK_SS.chapters);
+}
 
 /* ============ 题库懒加载 ============ */
 function dataKey(ch) { return 'MATH_DATA_' + ch.toUpperCase().replace(/-/g, '_'); }
 function isLoaded(ch) { return !!window[dataKey(ch)]; }
-function byCh(ch) { return window[dataKey(ch)] || []; }
+function loadScript(src) {
+  return new Promise(function (resolve, reject) {
+    var s = document.createElement('script');
+    s.src = src;
+    s.onload = function () { resolve(); };
+    s.onerror = function () { reject(new Error('题库加载失败: ' + src)); };
+    document.head.appendChild(s);
+  });
+}
+function byCh(ch) {
+  if (ch.indexOf('ec-') === 0) return window.PRO_BANK_EC ? window.PRO_BANK_EC.questions.filter(function (q) { return q.ch === ch; }) : [];
+  if (ch.indexOf('ss-') === 0) return window.PRO_BANK_SS ? window.PRO_BANK_SS.questions.filter(function (q) { return q.ch === ch; }) : [];
+  return window[dataKey(ch)] || [];
+}
 function loadChapterFiles(ids) {
-  var todo = ids.filter(function (id) { return !isLoaded(id); });
-  return Promise.all(todo.map(function (id) {
-    return new Promise(function (resolve, reject) {
-      var s = document.createElement('script');
-      s.src = 'data/' + id + '.js';
-      s.onload = function () { resolve(); };
-      s.onerror = function () { reject(new Error('题库加载失败: ' + id)); };
-      document.head.appendChild(s);
-    });
-  }));
+  var todo = [];
+  var needPro = ids.some(isProCh);
+  if (needPro && !proLoaded()) {
+    todo.push(loadScript('pro-bank-ec.js'));
+    todo.push(loadScript('pro-bank-ss.js'));
+  }
+  ids.forEach(function (id) {
+    if (!isProCh(id) && !isLoaded(id)) todo.push(loadScript('data/' + id + '.js'));
+  });
+  return Promise.all(todo).then(function () { buildProChapters(); });
 }
 
 /* ============ 数据 ============ */
@@ -161,8 +185,8 @@ var currentPaper = null;
 var practice = null;
 
 function tagHTML(q) {
-  var src = q.t === '真题' ? ('真题' + (q.y || '')) : '模拟';
-  var cls = q.t === '真题' ? 'tag-real' : (q.ch === 'doubleint' ? 'tag-ref' : 'tag-mock');
+  var src = q.t === '真题' ? ('真题' + (q.y || '')) : q.t;
+  var cls = q.t === '真题' ? 'tag-real' : (q.t === '课后题' ? 'tag-ex' : (q.ch === 'doubleint' ? 'tag-ref' : 'tag-mock'));
   return '<span class="tag ' + cls + '">' + esc(src) + '</span>';
 }
 function srcLabel(q) {
@@ -213,8 +237,8 @@ function render() {
 }
 
 function updateTabs() {
-  var map = { home: 'math', wrong: 'wrong', review: 'review', quiz: 'review' };
-  var active = map[view.name] || (view.name === 'placeholder' ? view.param : 'math');
+  var map = { wrong: 'wrong', review: 'review', quiz: 'review' };
+  var active = map[view.name] || (view.name === 'placeholder' ? view.param : (view.name === 'home' ? (subject === 'pro' ? 'major' : 'math') : 'math'));
   document.querySelectorAll('.tabbar .tab').forEach(function (b) {
     b.classList.toggle('active', b.dataset.tab === active);
   });
@@ -262,13 +286,16 @@ function renderHome(v) {
       var pr = p[qids[i].id];
       if (pr) { done += pr.r + pr.w; right += pr.r; }
     }
-    var pct = Math.round(done / Math.max(1, c.count) * 100);
-    var rule = c.rule === 'mixed' ? '真题80%+模拟20%' : '纯真题';
-    var metaRight = c.count ? ('真题' + c.real + ' / 模拟' + c.mock) : '题目待收录';
+    var total = qids.length;
+    var realN = qids.filter(function (q) { return q.t === '真题'; }).length;
+    var mockN = total - realN;
+    var pct = Math.round(done / Math.max(1, total) * 100);
+    var rule = c.rule === 'mixed' ? '真题优先+课后题20%' : '纯真题';
+    var metaRight = total ? ('真题' + realN + ' / ' + (subject === 'pro' ? '课后题' : '模拟') + mockN) : '题目待收录';
     return '<div class="ch-row" data-act="openCh" data-id="' + c.id + '">' +
       '<div class="ch-left"><div class="ch-name">' + esc(c.name) + '</div>' +
       '<div class="ch-meta">' + esc(c.area) + ' · ' + c.weight + ' 分 · ' + rule + ' · ' + metaRight + '</div></div>' +
-      '<div class="ch-right"><div class="ch-done">已练 ' + done + '/' + c.count + '</div>' +
+      '<div class="ch-right"><div class="ch-done">已练 ' + done + '/' + total + '</div>' +
       '<div class="pbar"><div class="pbar-fill" style="width:' + pct + '%"></div></div>' +
       '<div class="ch-rate">' + (done ? Math.round(right / done * 100) + '%' : '') + '</div></div>' +
       '</div>';
@@ -278,22 +305,33 @@ function renderHome(v) {
     return '<div class="hist-row"><span>' + esc(h.title) + '</span><span class="hist-date">' + esc(h.date) + '</span><span class="hist-score">' + h.score + ' / ' + h.sum + '</span></div>';
   }).join('') || '<div class="hint-text">还没有试卷记录，出第一张卷子吧～</div>';
 
+  var isPro = subject === 'pro';
+  var title = isPro ? '📝 今日卷子（专业课 811）' : '📝 今日卷子';
+  var desc = isPro
+    ? '选一个章节（或全卷 150 分）→ 按 811 大纲权重出卷（电路 75 分 + 信号与系统 75 分）。'
+    : '选一个章节（或全卷 150 分）→ 按「数学一出题分值表（2021-2026）」权重出卷。题目来自大观园题库（真题·模拟）。';
+  var ruleHint = isPro
+    ? '出卷规则：优先真题，约 20% 穿插课后题（邱关源/吴大正经典题）；真题持续补充中。做题卡住时点「💡 思路提示」。'
+    : '出卷规则：微分方程之前 100% 真题；微分方程及之后、线代、概率 ≈ 8 成真题 + 2 成模拟；二重积分不进卷子（保留 ' + (chapterById('doubleint') ? chapterById('doubleint').count : 10) + ' 道参考题）。做题卡住时点「💡 思路提示」。';
+  var refCard = isPro ? '' :
+    '<div class="card ref-card" data-act="openRef">' +
+      '<div class="card-title row-between"><span>🔬 二重积分 · 参考题</span><span class="hint-text">' + (chapterById('doubleint') ? chapterById('doubleint').count : 10) + ' 道</span></div>' +
+      '<p class="hint-text">按要求二重积分不出现在卷子里，只保留最有参考价值的真题供查阅。</p>' +
+    '</div>';
+
   v.innerHTML =
     '<div class="card">' +
-      '<div class="card-title row-between"><span>📝 今日卷子</span><button class="icon-btn" id="btnOpenSettings" title="设置">⚙️</button></div>' +
-      '<p class="hint-text">选一个章节（或全卷 150 分）→ 按「数学一出题分值表（2021-2026）」权重出卷。题目来自大观园题库（真题·模拟）。</p>' +
+      '<div class="card-title row-between"><span>' + title + '</span><button class="icon-btn" id="btnOpenSettings" title="设置">⚙️</button></div>' +
+      '<p class="hint-text">' + desc + '</p>' +
       '<div class="chips">' + chips + '<button class="chip chip-full" data-act="pickCh" data-id="__full__">🎯 全卷 150 分</button></div>' +
       '<div class="btn-row">' +
         '<button class="btn btn-primary btn-flex" data-act="genToday">🎲 生成今日卷子</button>' +
         '<button class="btn btn-ghost btn-flex" data-act="genNew">🔄 重新出卷</button>' +
       '</div>' +
-      '<p class="hint-text rule-hint">出卷规则：微分方程之前 100% 真题；微分方程及之后、线代、概率 ≈ 8 成真题 + 2 成模拟；二重积分不进卷子（保留 ' + (chapterById('doubleint') ? chapterById('doubleint').count : 10) + ' 道参考题）。做题卡住时点「💡 思路提示」。</p>' +
+      '<p class="hint-text rule-hint">' + ruleHint + '</p>' +
     '</div>' +
     '<div class="card"><div class="card-title">📚 章节题库</div>' + rows + '</div>' +
-    '<div class="card ref-card" data-act="openRef">' +
-      '<div class="card-title row-between"><span>🔬 二重积分 · 参考题</span><span class="hint-text">' + (chapterById('doubleint') ? chapterById('doubleint').count : 10) + ' 道</span></div>' +
-      '<p class="hint-text">按要求二重积分不出现在卷子里，只保留最有参考价值的真题供查阅。</p>' +
-    '</div>' +
+    refCard +
     '<div class="card"><div class="card-title">📜 最近试卷</div>' + histRows + '</div>';
   var st = $('btnOpenSettings');
   if (st) st.onclick = openSettings;
@@ -308,11 +346,11 @@ function genChapterPaper(chId, seed, done) {
     var rnd = mulberry32(seed);
     var pool = byCh(chId);
     if (!pool.length) {
-      toast('「' + ch.name + '」暂无题目（大观园题库待收录该章节）');
+      toast('「' + ch.name + '」暂无题目');
       return;
     }
-    var real = shuffle(pool.filter(function (q) { return q.t !== '模拟'; }), rnd);
-    var mock = shuffle(pool.filter(function (q) { return q.t === '模拟'; }), rnd);
+    var real = shuffle(pool.filter(function (q) { return q.t === '真题'; }), rnd);
+    var mock = shuffle(pool.filter(function (q) { return q.t !== '真题'; }), rnd);
     var target = chapterTarget(ch);
     var picks = [], sum = 0, ri = 0, mi = 0, count = 0;
     while (sum < target && count < 12) {
@@ -341,8 +379,8 @@ function genFullPaper(seed, done) {
     function pickOne(ch, qt) {
       var pool = byCh(ch.id).filter(function (q) { return q.qt === qt; });
       if (!pool.length) return null;
-      var real = pool.filter(function (q) { return q.t !== '模拟'; });
-      var mock = pool.filter(function (q) { return q.t === '模拟'; });
+      var real = pool.filter(function (q) { return q.t === '真题'; });
+      var mock = pool.filter(function (q) { return q.t !== '真题'; });
       if (ch.rule === 'mixed' && mock.length && rnd() < 0.2) return mock[Math.floor(rnd() * mock.length)];
       if (real.length) return real[Math.floor(rnd() * real.length)];
       return pool[Math.floor(rnd() * pool.length)];
@@ -354,9 +392,16 @@ function genFullPaper(seed, done) {
       return pool[Math.floor(rnd() * pool.length)];
     }
     var structure = [];
-    // 题库无填空题，全卷结构：10 选择(50分) + 10 解答(100分) = 150 分
-    for (var i = 0; i < 10; i++) structure.push({ qt: '选择', pts: 5 });
-    for (var k = 0; k < 10; k++) structure.push({ qt: '解答', pts: 10 });
+    if (subject === 'pro') {
+      // 专业课 811 全卷：6 选择(30) + 8 填空(40) + 8 解答(80) = 150 分
+      for (var i = 0; i < 6; i++) structure.push({ qt: '选择', pts: 5 });
+      for (var j = 0; j < 8; j++) structure.push({ qt: '填空', pts: 5 });
+      for (var k = 0; k < 8; k++) structure.push({ qt: '解答', pts: 10 });
+    } else {
+      // 数学全卷：10 选择(50) + 10 解答(100) = 150 分
+      for (var i2 = 0; i2 < 10; i2++) structure.push({ qt: '选择', pts: 5 });
+      for (var k2 = 0; k2 < 10; k2++) structure.push({ qt: '解答', pts: 10 });
+    }
     var picks = [];
     structure.forEach(function (slot) {
       var ch = weightedChapter();
@@ -454,15 +499,14 @@ function renderWrong(v) {
     v.innerHTML = '<div class="card"><div class="empty">🎉 太棒了，错题本是空的！</div></div>';
     return;
   }
-  var acts = activeChapters().map(function (c) { return c.id; });
+  var acts = CHAPTERS.filter(function (c) { return !c.ref; }).map(function (c) { return c.id; });
+  acts.push('ec-basic'); // 触发专业课题库加载（错题可能跨科目）
   loadChapterFiles(acts).then(function () {
-    // 解析错题
+    // 解析错题（数学 + 专业课）
     var list = [];
     wrongIds.forEach(function (qid) {
-      for (var i = 0; i < acts.length; i++) {
-        var found = byCh(acts[i]).filter(function (x) { return x.id === qid; });
-        if (found.length) { list.push(found[0]); return; }
-      }
+      var q = findQuestion(qid);
+      if (q) list.push(q);
     });
     var due = list.filter(function (q) { return srsDue(q.id); });
     var done = list.filter(function (q) { return p[q.id].srs && p[q.id].srs.done; });
@@ -688,6 +732,8 @@ var CONCEPT_QUESTIONS = {
 
 function weekStartStr() { return addDaysStr(todayStr(), -6); }
 
+var reviewSubject = 'math'; // 'math' | 'pro'
+
 /* 本周做题统计（需章节数据已加载） */
 function weeklyStats() {
   var p = loadLS(LS_PROGRESS, {});
@@ -695,6 +741,9 @@ function weeklyStats() {
   var done = 0, wrong = 0;
   var byCh = {};
   Object.keys(p).forEach(function (qid) {
+    var isProQ = qid.charAt(0) === 'p';
+    if (reviewSubject === 'pro' && !isProQ) return;
+    if (reviewSubject === 'math' && isProQ) return;
     var r = p[qid];
     if (r.last && r.last >= ws) {
       done++;
@@ -703,11 +752,10 @@ function weeklyStats() {
       if (cid) {
         byCh[cid] = byCh[cid] || { done: 0, wrong: 0, right: 0 };
         byCh[cid].done++;
-        if (r.w > 0 && r.lastW && r.lastW >= ws) byCh[cid].wrong++;
-        else if (r.lastW && r.lastW >= ws) byCh[cid].wrong++;
+        if (r.lastW && r.lastW >= ws) byCh[cid].wrong++;
       }
     }
-    if (r.lastW && r.lastW >= ws) wrong++;
+    if (isProQ === (reviewSubject === 'pro') && r.lastW && r.lastW >= ws) wrong++;
   });
   return { done: done, wrong: wrong, byCh: byCh };
 }
@@ -716,14 +764,19 @@ var reviewState = { rows: null, mode: null, loading: false };
 
 function renderReview(v) {
   var ws = weekStartStr();
-  var acts = activeChapters().map(function (c) { return c.id; });
+  var acts = CHAPTERS.filter(function (c) { return !c.ref; }).map(function (c) { return c.id; });
+  acts.push('ec-basic'); // 预载专业课题库（供跨科目统计）
+  var subjChips =
+    '<button class="chip' + (reviewSubject === 'math' ? ' chip-on' : '') + '" data-act="reviewSubject" data-s="math">📐 数学</button>' +
+    '<button class="chip' + (reviewSubject === 'pro' ? ' chip-on' : '') + '" data-act="reviewSubject" data-s="pro">🔌 专业课</button>';
   v.innerHTML = '<div class="sub-header"><button class="icon-btn" data-act="backHome">←</button><div class="sh-title">📆 每周复习回顾</div><div class="sh-sub">' + ws + ' 起</div></div>' +
-    '<div class="card"><div class="card-title">📝 本周学习内容</div>' +
-    '<textarea id="weekText" class="week-input" placeholder="写下本周学了哪些内容，例如：&#10;极限：洛必达、泰勒展开、等价无穷小&#10;一元积分：换元、分部积分&#10;线代：矩阵求逆、特征值"></textarea>' +
+    '<div class="card"><div class="card-title">本周学习内容</div>' +
+    '<div class="chips">' + subjChips + '</div>' +
+    '<textarea id="weekText" class="week-input" placeholder="写下本周学了哪些内容，例如：&#10;极限：洛必达、泰勒展开、等价无穷小&#10;电路：戴维南定理、三要素法&#10;信号：傅里叶变换、Z 变换"></textarea>' +
     '<p class="hint-text" id="weekStatsLine">正在统计本周做题数据…</p>' +
     '<div class="btn-row"><button class="btn btn-primary btn-flex" data-act="analyzeWeek">🔍 分析需要回顾的知识点</button></div></div>' +
     '<div id="reviewResult"></div>' +
-    '<div class="card"><p class="hint-text">💡 用法：写下本周学的内容 → 点分析 → 对建议的薄弱知识点「📝 出题练」刷几道题，或「💬 考我理解」让 AI 测验你的概念掌握程度（配 DeepSeek Key 效果最佳）。</p></div>';
+    '<div class="card"><p class="hint-text">💡 用法：选科目 → 写下本周学的内容 → 点分析 → 对建议的薄弱知识点「📝 出题练」刷几道题，或「💬 考我理解」让 AI 测验你的概念掌握程度（配 DeepSeek Key 效果最佳）。</p></div>';
 
   var ta = $('weekText');
   ta.value = loadLS('s1_week_text', '');
@@ -736,7 +789,7 @@ function renderReview(v) {
     loadSyncData(function (sd) {
       var el = $('weekStatsLine');
       if (!el) return;
-      if (sd && sd.weekly && sd.weekly.total != null) {
+      if (reviewSubject === 'math' && sd && sd.weekly && sd.weekly.total != null) {
         var line = '大观园同步：本周做题 <b>' + sd.weekly.total + '</b> 道 · 做错 <b>' + sd.weekly.wrong + '</b> 道';
         var chs = (sd.weekly.chapters || []).map(function (c) { return c.name; });
         if (chs.length) line += ' · 涉及：' + chs.join('、');
@@ -772,10 +825,13 @@ function localAnalysisRows() {
   });
   rows.sort(function (a, b) { return (b._w - a._w) || (a._rate - b._rate); });
   rows = rows.slice(0, 6);
-  // 补充：到期未复习的错题所在章节
+  // 补充：到期未复习的错题所在章节（按当前科目过滤）
   var p = loadLS(LS_PROGRESS, {});
   var seen = {};
   Object.keys(p).forEach(function (qid) {
+    var isProQ = qid.charAt(0) === 'p';
+    if (reviewSubject === 'pro' && !isProQ) return;
+    if (reviewSubject === 'math' && isProQ) return;
     var r = p[qid];
     if (r.w > 0 && r.srs && !r.srs.done && r.srs.next <= todayStr()) {
       var q = findQuestion(qid);
@@ -795,7 +851,7 @@ function analyzeWeek() {
   if (reviewState.loading) return;
   var text = ($('weekText') ? $('weekText').value : '').trim();
   var st = weeklyStats();
-  var hasSync = !!(syncData && syncData.weekly && syncData.weekly.total != null);
+  var hasSync = reviewSubject === 'math' && !!(syncData && syncData.weekly && syncData.weekly.total != null);
   var statText;
   if (hasSync) {
     var w = syncData.weekly;
@@ -814,7 +870,7 @@ function analyzeWeek() {
   if (apiKey() && (text || st.done > 0 || hasSync)) {
     reviewState.loading = true;
     $('reviewResult').innerHTML = '<div class="card"><div class="empty">🧠 AI 分析中…</div></div>';
-    var sys = '你是考研数学一辅导老师。根据学生本周学习内容和做题数据，输出"需要回顾的知识点"清单。严格按此格式每行一个，共 3~6 行：章节名 | 原因 | 建议动作（不超过15字）。章节名必须从以下选取：' + activeChapters().map(function (c) { return c.name; }).join('、') + '。不要输出其他内容。';
+    var sys = (reviewSubject === 'pro' ? '你是考研专业课（信号与系统、电路）辅导老师。' : '你是考研数学一辅导老师。') + '根据学生本周学习内容和做题数据，输出"需要回顾的知识点"清单。严格按此格式每行一个，共 3~6 行：章节名 | 原因 | 建议动作（不超过15字）。章节名必须从以下选取：' + activeChapters().map(function (c) { return c.name; }).join('、') + '。不要输出其他内容。';
     var user = '本周学习内容：' + (text || '（未填写）') + '\n本周做题数据：' + statText;
     fetch(API_BASE + '/chat/completions', {
       method: 'POST',
@@ -1057,6 +1113,15 @@ function practiceAnswer(ok) {
 }
 
 function findQuestion(qid) {
+  if (qid && qid.charAt(0) === 'p') {
+    var banks = [window.PRO_BANK_EC, window.PRO_BANK_SS];
+    for (var b = 0; b < banks.length; b++) {
+      if (!banks[b]) continue;
+      var found = banks[b].questions.filter(function (q) { return q.id === qid; });
+      if (found.length) return found[0];
+    }
+    return null;
+  }
   for (var i = 0; i < CHAPTERS.length; i++) {
     var qs = byCh(CHAPTERS[i].id);
     for (var j = 0; j < qs.length; j++) if (qs[j].id === qid) return qs[j];
@@ -1069,10 +1134,10 @@ function handleClick(e) {
   if (!el) return;
   var tab = el.dataset.tab;
   if (tab) {
-    if (tab === 'math') { view = { name: 'home', param: null }; render(); }
+    if (tab === 'math') { subject = 'math'; view = { name: 'home', param: null }; render(); }
     else if (tab === 'review') { view = { name: 'review', param: null }; reviewState.rows = null; render(); }
     else if (tab === 'english') { view = { name: 'placeholder', param: 'english' }; render(); }
-    else if (tab === 'major') { view = { name: 'placeholder', param: 'major' }; render(); }
+    else if (tab === 'major') { subject = 'pro'; view = { name: 'home', param: null }; render(); }
     else if (tab === 'wrong') { view = { name: 'wrong', param: null }; render(); }
     return;
   }
@@ -1166,6 +1231,11 @@ function handleClick(e) {
       quiz.done = true;
       render();
       break;
+    case 'reviewSubject':
+      reviewSubject = el.dataset.s === 'pro' ? 'pro' : 'math';
+      reviewState.rows = null;
+      render();
+      break;
     case 'backReview':
       view = { name: 'review', param: null };
       quiz = null;
@@ -1176,6 +1246,7 @@ function handleClick(e) {
 
 /* ============ 初始化 ============ */
 function init() {
+  buildProChapters(); // 专业课题库随页面加载，直接构建章节列表
   document.addEventListener('click', handleClick);
   var sc = $('btnSaveSettings');
   if (sc) sc.addEventListener('click', saveSettings);
