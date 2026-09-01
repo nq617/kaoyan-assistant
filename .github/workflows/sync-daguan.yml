@@ -1,0 +1,32 @@
+name: Sync Daguan Practice Data
+on:
+  schedule:
+    - cron: '22 0 * * *'   # 北京时间每天 08:22（UTC 00:22）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run sync
+        run: node scripts/sync-daguan.mjs
+        env:
+          DAGUAN_TOKEN: ${{ secrets.DAGUAN_TOKEN }}
+      - name: Commit & push
+        run: |
+          git config user.name "daguan-sync-bot"
+          git config user.email "sync-bot@users.noreply.github.com"
+          git add math/sync-data.json
+          if ! git diff --cached --quiet; then
+            git commit -m "sync: 更新大观园刷题数据 $(date -u +%F)"
+            git push
+          else
+            echo "no changes"
+          fi

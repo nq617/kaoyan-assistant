@@ -643,6 +643,29 @@ function askAIHint(qid, q, ch, slot) {
 }
 
 /* ============ 每周复习回顾 ============ */
+var syncData = null;
+function loadSyncData(cb) {
+  if (syncData) { cb(syncData); return; }
+  fetch('sync-data.json', { cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) { syncData = j || null; cb(syncData); })
+    .catch(function () { syncData = null; cb(syncData); });
+}
+function syncAnalysisRows() {
+  var rows = [];
+  var chs = (syncData && syncData.weekly && syncData.weekly.chapters) || [];
+  chs.forEach(function (c) {
+    if (c.wrong > 0 || (c.done >= 10 && (c.done - c.wrong) < c.done * 0.6)) {
+      var rate = c.done ? Math.round((c.done - c.wrong) / c.done * 100) : 0;
+      var ch = null;
+      for (var i = 0; i < CHAPTERS.length; i++) {
+        if (CHAPTERS[i].name === c.name || CHAPTERS[i].id === c.id || CHAPTERS[i].short === c.name) { ch = CHAPTERS[i]; break; }
+      }
+      rows.push({ ch: ch ? ch.id : null, name: c.name, reason: '大观园本周做 ' + c.done + ' 题错 ' + c.wrong + ' 题（正确率 ' + rate + '%）', advice: '先回看错题解析总结方法，再针对性刷题巩固' });
+    }
+  });
+  return rows;
+}
 var CONCEPT_QUESTIONS = {
   'limit': { q: '洛必达法则的使用条件是什么？哪些情况不能直接用？', a: '条件：0/0 或 ∞/∞ 型；分子分母在去心邻域内可导；分母导数不为 0；求导后的极限存在（或为 ∞）。注意 0·∞、∞−∞、1^∞ 等未定式要先变形，且不能对非未定式滥用。' },
   'diff1': { q: '可导、可微、连续三者之间是什么关系？', a: '可导 ⟺ 可微 ⇒ 连续；连续不一定可导（如 |x| 在 0 点）。一元函数中可导与可微等价。' },
@@ -710,17 +733,28 @@ function renderReview(v) {
   });
 
   loadChapterFiles(acts).then(function () {
-    var st = weeklyStats();
-    var line = '本周做题 <b>' + st.done + '</b> 道 · 做错 <b>' + st.wrong + '</b> 道';
-    var chNames = [];
-    Object.keys(st.byCh).forEach(function (cid) {
-      var c = chapterById(cid);
-      if (c) chNames.push(c.short);
+    loadSyncData(function (sd) {
+      var el = $('weekStatsLine');
+      if (!el) return;
+      if (sd && sd.weekly && sd.weekly.total != null) {
+        var line = '大观园同步：本周做题 <b>' + sd.weekly.total + '</b> 道 · 做错 <b>' + sd.weekly.wrong + '</b> 道';
+        var chs = (sd.weekly.chapters || []).map(function (c) { return c.name; });
+        if (chs.length) line += ' · 涉及：' + chs.join('、');
+        if (sd.syncedAt) line += ' <span style="font-size:11px">（' + esc(String(sd.syncedAt).slice(0, 16).replace('T', ' ')) + ' 同步）</span>';
+        el.innerHTML = line;
+      } else {
+        var st = weeklyStats();
+        var line2 = '本周做题 <b>' + st.done + '</b> 道 · 做错 <b>' + st.wrong + '</b> 道';
+        var chNames = [];
+        Object.keys(st.byCh).forEach(function (cid) {
+          var c = chapterById(cid);
+          if (c) chNames.push(c.short);
+        });
+        if (chNames.length) line2 += ' · 涉及：' + chNames.join('、');
+        el.innerHTML = line2;
+      }
+      if (reviewState.rows) renderReviewResult();
     });
-    if (chNames.length) line += ' · 涉及：' + chNames.join('、');
-    var el = $('weekStatsLine');
-    if (el) el.innerHTML = line;
-    if (reviewState.rows) renderReviewResult();
   }).catch(function () { /* 忽略 */ });
 }
 
@@ -761,16 +795,27 @@ function analyzeWeek() {
   if (reviewState.loading) return;
   var text = ($('weekText') ? $('weekText').value : '').trim();
   var st = weeklyStats();
-  if (apiKey() && (text || st.done > 0)) {
-    reviewState.loading = true;
-    $('reviewResult').innerHTML = '<div class="card"><div class="empty">🧠 AI 分析中…</div></div>';
-    var sys = '你是考研数学一辅导老师。根据学生本周学习内容和做题数据，输出"需要回顾的知识点"清单。严格按此格式每行一个，共 3~6 行：章节名 | 原因 | 建议动作（不超过15字）。章节名必须从以下选取：' + activeChapters().map(function (c) { return c.name; }).join('、') + '。不要输出其他内容。';
+  var hasSync = !!(syncData && syncData.weekly && syncData.weekly.total != null);
+  var statText;
+  if (hasSync) {
+    var w = syncData.weekly;
+    statText = '共' + w.total + '题，错' + w.wrong + '题。各章节：' + (w.chapters || []).map(function (c) {
+      var rate = c.done ? Math.round((c.done - c.wrong) / c.done * 100) : 0;
+      return c.name + '：做' + c.done + '错' + c.wrong + '（' + rate + '%）';
+    }).join('；');
+  } else {
     var chStats = Object.keys(st.byCh).map(function (cid) {
       var c = chapterById(cid); var s = st.byCh[cid];
       var rate = s.done ? Math.round((s.done - s.wrong) / s.done * 100) : 0;
       return c.name + '：做' + s.done + '错' + s.wrong + '（' + rate + '%）';
     }).join('；');
-    var user = '本周学习内容：' + (text || '（未填写）') + '\n本周做题数据：共' + st.done + '题，错' + st.wrong + '题。各章节：' + chStats;
+    statText = '共' + st.done + '题，错' + st.wrong + '题。各章节：' + chStats;
+  }
+  if (apiKey() && (text || st.done > 0 || hasSync)) {
+    reviewState.loading = true;
+    $('reviewResult').innerHTML = '<div class="card"><div class="empty">🧠 AI 分析中…</div></div>';
+    var sys = '你是考研数学一辅导老师。根据学生本周学习内容和做题数据，输出"需要回顾的知识点"清单。严格按此格式每行一个，共 3~6 行：章节名 | 原因 | 建议动作（不超过15字）。章节名必须从以下选取：' + activeChapters().map(function (c) { return c.name; }).join('、') + '。不要输出其他内容。';
+    var user = '本周学习内容：' + (text || '（未填写）') + '\n本周做题数据：' + statText;
     fetch(API_BASE + '/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey() },
@@ -786,16 +831,16 @@ function analyzeWeek() {
       reviewState.loading = false;
       renderReviewResult();
     }).catch(function (e) {
-      reviewState.rows = localAnalysisRows();
+      reviewState.rows = hasSync ? syncAnalysisRows() : localAnalysisRows();
       reviewState.mode = 'local';
       reviewState.loading = false;
       $('reviewResult').innerHTML = '';
       renderReviewResult();
-      toast('AI 分析失败（' + String(e && e.message || e) + '），已用本地数据生成回顾建议');
+      toast('AI 分析失败（' + String(e && e.message || e) + '），已用' + (hasSync ? '大观园同步' : '本地') + '数据生成回顾建议');
     });
   } else {
-    reviewState.rows = localAnalysisRows();
-    reviewState.mode = 'local';
+    reviewState.rows = hasSync ? syncAnalysisRows() : localAnalysisRows();
+    reviewState.mode = hasSync ? 'sync' : 'local';
     renderReviewResult();
   }
 }
@@ -824,7 +869,7 @@ function renderReviewResult() {
     return;
   }
   var html = '<div class="card"><div class="card-title">🎯 建议回顾的知识点 ' +
-    '<span class="hint-text">' + (reviewState.mode === 'ai' ? 'AI 分析' : '本地数据分析') + '</span></div>';
+    '<span class="hint-text">' + (reviewState.mode === 'ai' ? 'AI 分析' : (reviewState.mode === 'sync' ? '大观园数据' : '本地数据分析')) + '</span></div>';
   rows.forEach(function (row, i) {
     html += '<div class="rev-row"><div class="rev-head"><b>' + (i + 1) + '. ' + esc(row.name) + '</b></div>' +
       '<div class="rev-reason">📌 ' + esc(row.reason) + '</div>' +
