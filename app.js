@@ -96,7 +96,7 @@ var MAJOR_DATA = {
 var memoryData = null;
 
 function defaultData() {
-  return { settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), days: {}, mistakes: [] };
+  return { settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), days: {}, mistakes: [], majorBank: { a: {}, done: {}, mastered: {}, reveal: {}, sol: {} } };
 }
 
 function numOr(v, def, min, max) {
@@ -164,6 +164,11 @@ function migrate(raw) {
     }
     if (raw.days && typeof raw.days === 'object') d.days = sanitizeDays(raw.days);
     if (Array.isArray(raw.mistakes)) d.mistakes = raw.mistakes.filter(function (m) { return m && typeof m === 'object'; });
+    if (raw.majorBank && typeof raw.majorBank === 'object') {
+      ['a', 'done', 'mastered', 'reveal', 'sol'].forEach(function (k) {
+        if (raw.majorBank[k] && typeof raw.majorBank[k] === 'object') d.majorBank[k] = raw.majorBank[k];
+      });
+    }
     if (raw.pomo && typeof raw.pomo === 'object') {
       d.pomo = {
         mode: raw.pomo.mode === 'short' || raw.pomo.mode === 'long' ? raw.pomo.mode : 'focus',
@@ -1298,7 +1303,81 @@ function renderMajor() {
   m.books.forEach(function (b) { h += '<div class="major-item">· ' + esc(b) + '</div>'; });
   h += '</div></div>';
 
+  h += '<div class="card"><div class="card-title">🧮 真题 · 课后题 题库（可直接作答）</div>'
+    + '<p class="hint-text">2025/2026 真题做成套卷题卡（题目在视频画面里，点「▶第N讲」直达）；课后题可直接在题卡里写答案、对照答案与解析、标掌握。所有作答只保存在本机。</p>'
+    + '<div class="major-filters" id="majorBankFilters"></div>'
+    + '<div id="majorBankArea"></div></div>';
+
   el.innerHTML = h;
+  renderMajorBank();
+}
+
+/* ============ 专业课 题库 ============ */
+var majorBankFilter = 'all';
+
+function renderMajorBank() {
+  var fEl = document.getElementById('majorBankFilters');
+  var area = document.getElementById('majorBankArea');
+  if (!fEl || !area) return;
+  var filters = [['all', '全部'], ['exam', '真题套卷'], ['信号', '信号课后题'], ['电路', '电路课后题']];
+  fEl.innerHTML = filters.map(function (f) {
+    return '<button class="chip' + (majorBankFilter === f[0] ? ' active' : '') + '" data-action="majorFilter" data-f="' + f[0] + '">' + f[1] + '</button>';
+  }).join('');
+
+  var mb = data.majorBank;
+  var bankIds = MAJOR_BANK.bank.map(function (x) { return x.id; });
+  var examIds = [];
+  MAJOR_BANK.exams.forEach(function (ex) { ex.items.forEach(function (it) { examIds.push(ex.id + '-' + it.p); }); });
+  var doneCount = bankIds.concat(examIds).filter(function (id) { return mb.done[id]; }).length;
+  var masterCount = bankIds.filter(function (id) { return mb.mastered[id]; }).length;
+  var h = '<p class="hint-text">📊 已做 ' + doneCount + '/' + (bankIds.length + examIds.length)
+    + ' ｜ 课后题已掌握 ' + masterCount + '/' + bankIds.length + '</p>';
+
+  if (majorBankFilter === 'all' || majorBankFilter === 'exam') {
+    MAJOR_BANK.exams.forEach(function (ex) {
+      h += '<div class="major-sub-title">📄 ' + esc(ex.y) + ' 年 811 真题（' + ex.items.length + ' 题）'
+        + ' <a href="' + ex.video + '" target="_blank" rel="noopener">▶ 打开讲解视频</a>'
+        + (ex.video2 ? ' <a href="' + ex.video2 + '" target="_blank" rel="noopener">▶ 备用讲解</a>' : '') + '</div>'
+        + '<p class="hint-text">' + esc(ex.note) + '</p>';
+      ex.items.forEach(function (it) {
+        var id = ex.id + '-' + it.p;
+        var d = mb.done[id];
+        h += '<div class="major-item bank-item">'
+          + '<div class="bank-head"><b>' + it.n + '. ' + esc(it.name) + '</b>'
+          + ' <a href="' + ex.video + '?p=' + it.p + '" target="_blank" rel="noopener" class="bank-link">▶ 第' + it.p + '讲</a>'
+          + '<button class="chip' + (d ? ' active' : '') + '" data-action="bankDone" data-id="' + id + '">' + (d ? '✅已做' : '☐标记已做') + '</button></div>'
+          + '<textarea class="bank-answer" data-id="' + id + '" placeholder="在这里写你的答案 / 思路（自动保存）">' + esc(mb.a[id] || '') + '</textarea>'
+          + '</div>';
+      });
+    });
+  }
+  if (majorBankFilter === 'all' || majorBankFilter === '信号' || majorBankFilter === '电路') {
+    MAJOR_BANK.bank.filter(function (q) { return majorBankFilter === 'all' || q.subj === majorBankFilter; }).forEach(function (q) {
+      var reveal = mb.reveal[q.id];
+      var sol = mb.sol[q.id];
+      var m = mb.mastered[q.id];
+      h += '<div class="major-item bank-item">'
+        + '<div class="bank-head"><span class="tag">' + esc(q.subj) + '</span><b>' + esc(q.ch) + ' · ' + esc(q.qt) + '题</b></div>'
+        + '<div class="bank-q">' + esc(q.q) + '</div>'
+        + '<div class="bank-src">📖 ' + esc(q.src) + '</div>'
+        + '<textarea class="bank-answer" data-id="' + q.id + '" placeholder="在这里写答案（自动保存）">' + esc(mb.a[q.id] || '') + '</textarea>'
+        + '<div class="bank-btns">'
+        + '<button class="chip" data-action="bankA" data-id="' + q.id + '">' + (reveal ? '🙈 隐藏答案' : '👁 看答案') + '</button>'
+        + '<button class="chip" data-action="bankS" data-id="' + q.id + '">' + (sol ? '🙈 隐藏解析' : '📝 看解析') + '</button>'
+        + '<button class="chip' + (m ? ' active' : '') + '" data-action="bankMaster" data-id="' + q.id + '">' + (m ? '⭐已掌握' : '☆标掌握') + '</button>'
+        + '</div>'
+        + (reveal ? '<div class="bank-ans">✅ 答案：' + esc(q.a) + '</div>' : '')
+        + (sol ? '<div class="bank-sol">💡 解析：' + esc(q.s) + '</div>' : '')
+        + '</div>';
+    });
+  }
+  area.innerHTML = h;
+  area.querySelectorAll('.bank-answer').forEach(function (ta) {
+    ta.addEventListener('input', function () {
+      data.majorBank.a[ta.dataset.id] = ta.value;
+      saveData();
+    });
+  });
 }
 
 function schoolWebSearch(engine) {
@@ -1533,6 +1612,11 @@ function handleClick(e) {
     case 'mistakeDelete': deleteMistake(el.dataset.id); break;
     case 'mistakeFilter': mistakeFilter = el.dataset.f; renderMistakes(); break;
     case 'schoolRegion': schoolRegion = el.dataset.id; renderSchoolFilters(); renderSchoolList(); break;
+    case 'majorFilter': majorBankFilter = el.dataset.f; renderMajorBank(); break;
+    case 'bankDone': data.majorBank.done[el.dataset.id] = !data.majorBank.done[el.dataset.id]; saveData(); renderMajorBank(); break;
+    case 'bankMaster': data.majorBank.mastered[el.dataset.id] = !data.majorBank.mastered[el.dataset.id]; saveData(); renderMajorBank(); break;
+    case 'bankA': data.majorBank.reveal[el.dataset.id] = !data.majorBank.reveal[el.dataset.id]; saveData(); renderMajorBank(); break;
+    case 'bankS': data.majorBank.sol[el.dataset.id] = !data.majorBank.sol[el.dataset.id]; saveData(); renderMajorBank(); break;
   }
 }
 
