@@ -72,6 +72,13 @@ button { font-family: inherit; color: inherit; }
 /* 章节列表 */
 .ch-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px dashed var(--border); cursor: pointer; }
 .ch-row:last-child { border-bottom: none; }
+.exam-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px dashed var(--border); cursor: pointer; }
+.exam-row:last-child { border-bottom: none; }
+.exam-card { margin-bottom: 10px; }
+.exam-card .card-title { align-items: center; }
+.video-link { display: inline-flex; align-items: center; gap: 6px; margin: 6px 0 10px; font-size: 12.5px; font-weight: 700; color: var(--primary); text-decoration: none; background: color-mix(in srgb, var(--primary) 8%, transparent); border-radius: 9px; padding: 6px 12px; }
+.exam-note { width: 100%; min-height: 84px; box-sizing: border-box; resize: vertical; border: 1px solid var(--border); border-radius: 12px; background: var(--card2); color: var(--text); font: inherit; font-size: 14px; line-height: 1.7; padding: 10px 12px; }
+.exam-note:focus { outline: none; border-color: var(--primary); }
 .ch-left { flex: 1; min-width: 0; }
 .ch-name { font-size: 15px; font-weight: 700; }
 .ch-meta { font-size: 11.5px; color: var(--muted); margin-top: 3px; }

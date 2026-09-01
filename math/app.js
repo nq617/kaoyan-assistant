@@ -11,6 +11,7 @@
 var LS_PROGRESS = 's1_progress';
 var LS_HISTORY = 's1_history';
 var LS_HINTS = 's1_hints';
+var LS_EXAMS = 's1_exams';
 var API_BASE = 'https://api.deepseek.com';
 
 /* ============ 章节 ============ */
@@ -229,6 +230,8 @@ function render() {
   else if (view.name === 'placeholder') renderPlaceholder(v);
   else if (view.name === 'review') renderReview(v);
   else if (view.name === 'quiz') renderQuiz(v);
+  else if (view.name === 'exams') renderExams(v);
+  else if (view.name === 'exam') renderExam(v);
   updateTabs();
   updateHeader();
   updateBadges();
@@ -237,7 +240,7 @@ function render() {
 }
 
 function updateTabs() {
-  var map = { wrong: 'wrong', review: 'review', quiz: 'review' };
+  var map = { wrong: 'wrong', review: 'review', quiz: 'review', exams: 'major', exam: 'major' };
   var active = map[view.name] || (view.name === 'placeholder' ? view.param : (view.name === 'home' ? (subject === 'pro' ? 'major' : 'math') : 'math'));
   document.querySelectorAll('.tabbar .tab').forEach(function (b) {
     b.classList.toggle('active', b.dataset.tab === active);
@@ -319,6 +322,32 @@ function renderHome(v) {
       '<p class="hint-text">按要求二重积分不出现在卷子里，只保留最有参考价值的真题供查阅。</p>' +
     '</div>';
 
+  var examCard = !isPro ? '' : (function () {
+    var exams = window.PRO_EXAMS || [];
+    if (!exams.length) {
+      return '<div class="card"><div class="card-title">📋 历年真题套卷</div><p class="hint-text">真题题卡数据加载失败，请刷新重试（题库文件 pro-exams.js）。</p></div>';
+    }
+    var notes = loadLS(LS_EXAMS, {});
+    var rows = exams.map(function (e) {
+      var ok = 0;
+      (e.items || []).forEach(function (it) {
+        var st = notes[e.id] && notes[e.id][e.id + '-' + it.n];
+        if (st && st.ok) ok++;
+      });
+      var pct = Math.round(ok / Math.max(1, (e.items || []).length) * 100);
+      return '<div class="exam-row" data-act="openExam" data-id="' + e.id + '">' +
+        '<div class="ch-left"><div class="ch-name">📜 ' + esc(e.title) + '</div>' +
+        '<div class="ch-meta">' + (e.items || []).length + ' 张题卡 · 视频逐题讲解</div></div>' +
+        '<div class="ch-right"><div class="ch-done">掌握 ' + ok + '/' + (e.items || []).length + '</div>' +
+        '<div class="pbar"><div class="pbar-fill" style="width:' + pct + '%"></div></div>' +
+        '<div class="ch-rate">' + pct + '%</div></div>' +
+        '</div>';
+    }).join('');
+    return '<div class="card"><div class="card-title">📋 历年真题套卷（题卡模式）</div>' +
+      '<p class="hint-text">真题原文是视频画面，做成题卡：每张卡写自己的作答和思路 → 点视频链接直达对应讲解分P → 会了就打勾。进度自动保存。</p>' +
+      rows + '</div>';
+  })();
+
   v.innerHTML =
     '<div class="card">' +
       '<div class="card-title row-between"><span>' + title + '</span><button class="icon-btn" id="btnOpenSettings" title="设置">⚙️</button></div>' +
@@ -332,9 +361,82 @@ function renderHome(v) {
     '</div>' +
     '<div class="card"><div class="card-title">📚 章节题库</div>' + rows + '</div>' +
     refCard +
+    examCard +
     '<div class="card"><div class="card-title">📜 最近试卷</div>' + histRows + '</div>';
   var st = $('btnOpenSettings');
   if (st) st.onclick = openSettings;
+}
+
+/* ============ 真题套卷题卡 ============ */
+function examById(id) {
+  var exams = window.PRO_EXAMS || [];
+  for (var i = 0; i < exams.length; i++) if (exams[i].id === id) return exams[i];
+  return null;
+}
+/* 单视频直接 ?p=n；双视频（如 2026）：信号部分在视频①，电路部分在视频②（分P 从 1 起） */
+function examItemLink(exam, it) {
+  if (!exam.video2) return exam.video + '?p=' + it.p;
+  var isCircuit = it.name.indexOf('电路') === 0;
+  return isCircuit ? exam.video2 + '?p=' + Math.max(1, it.p - 5) : exam.video + '?p=' + it.p;
+}
+function examRowsHTML() {
+  var exams = window.PRO_EXAMS || [];
+  var notes = loadLS(LS_EXAMS, {});
+  return exams.map(function (e) {
+    var ok = 0;
+    (e.items || []).forEach(function (it) {
+      var st = notes[e.id] && notes[e.id][e.id + '-' + it.n];
+      if (st && st.ok) ok++;
+    });
+    var pct = Math.round(ok / Math.max(1, (e.items || []).length) * 100);
+    return '<div class="exam-row" data-act="openExam" data-id="' + e.id + '">' +
+      '<div class="ch-left"><div class="ch-name">📜 ' + esc(e.title) + '</div>' +
+      '<div class="ch-meta">' + (e.items || []).length + ' 张题卡 · 视频逐题讲解</div></div>' +
+      '<div class="ch-right"><div class="ch-done">掌握 ' + ok + '/' + (e.items || []).length + '</div>' +
+      '<div class="pbar"><div class="pbar-fill" style="width:' + pct + '%"></div></div>' +
+      '<div class="ch-rate">' + pct + '%</div></div>' +
+      '</div>';
+  }).join('') || '<p class="hint-text">暂无真题套卷数据。</p>';
+}
+function renderExams(v) {
+  v.innerHTML = '<div class="sub-header"><button class="icon-btn" data-act="backHome">←</button><div class="sh-title">📋 历年真题套卷</div></div>' +
+    '<p class="hint-text">真题原文是视频画面，做成题卡：每张卡写自己的作答和思路 → 点视频链接直达对应讲解分P → 会了就打勾。进度自动保存。</p>' +
+    '<div class="card">' + examRowsHTML() + '</div>';
+}
+function renderExam(v) {
+  var exam = examById(view.param);
+  if (!exam) { view = { name: 'exams', param: null }; render(); return; }
+  var notes = loadLS(LS_EXAMS, {});
+  var exNotes = notes[exam.id] || {};
+  var top = '<a class="btn btn-primary btn-flex" target="_blank" rel="noopener" href="' + exam.video + '">▶ 讲解视频①（填空+信号）</a>' +
+    (exam.video2 ? '<a class="btn btn-ghost btn-flex" target="_blank" rel="noopener" href="' + exam.video2 + '">▶ 讲解视频②（电路）</a>' : '<a class="btn btn-ghost btn-flex" target="_blank" rel="noopener" href="' + exam.video + '">▶ 打开整集</a>');
+  var cards = (exam.items || []).map(function (it) {
+    var key = exam.id + '-' + it.n;
+    var st = exNotes[key] || {};
+    return '<div class="card exam-card">' +
+      '<div class="card-title row-between"><span>第 ' + it.n + ' 题 · ' + esc(it.name) + '</span>' +
+      '<button class="mini-btn' + (st.ok ? ' on' : '') + '" data-act="examMark" data-exam="' + exam.id + '" data-n="' + it.n + '">' + (st.ok ? '✓ 已掌握' : '□ 标为掌握') + '</button></div>' +
+      '<a class="video-link" target="_blank" rel="noopener" href="' + examItemLink(exam, it) + '">▶ 直达讲解 分P ' + it.p + '</a>' +
+      '<textarea class="exam-note" data-exam="' + exam.id + '" data-n="' + it.n + '" placeholder="写下你的答案 / 思路 / 卡住的地方…">' + esc(st.note || '') + '</textarea>' +
+      '</div>';
+  }).join('');
+  v.innerHTML = '<div class="sub-header"><button class="icon-btn" data-act="backExams">←</button><div class="sh-title">' + esc(exam.title) + '</div><div class="sh-sub">' + (exam.items || []).length + ' 题</div></div>' +
+    '<p class="hint-text">' + esc(exam.note || '') + ' 找不到对应分P时，点上方整集链接按题号定位。</p>' +
+    '<div class="btn-row">' + top + '</div>' +
+    cards;
+  var tas = v.querySelectorAll('.exam-note');
+  for (var i = 0; i < tas.length; i++) {
+    tas[i].addEventListener('change', function (e2) {
+      var ex = e2.target.dataset.exam, n = e2.target.dataset.n;
+      var all = loadLS(LS_EXAMS, {});
+      var en = all[ex] || {};
+      var k = ex + '-' + n;
+      en[k] = en[k] || {};
+      en[k].note = e2.target.value;
+      all[ex] = en;
+      saveLS(LS_EXAMS, all);
+    });
+  }
 }
 
 /* ============ 出卷引擎 ============ */
@@ -1147,6 +1249,20 @@ function handleClick(e) {
     case 'genToday': genPaper(todaySeed()); break;
     case 'genNew': genPaper(Math.floor(Math.random() * 2147483647)); break;
     case 'openCh': practice = null; view = { name: 'chapter', param: el.dataset.id }; render(); break;
+    case 'openExam': view = { name: 'exam', param: el.dataset.id }; render(); break;
+    case 'backExams': view = { name: 'exams', param: null }; render(); break;
+    case 'examMark': {
+      var exId = el.dataset.exam, n = el.dataset.n;
+      var all = loadLS(LS_EXAMS, {});
+      var en = all[exId] || {};
+      var k = exId + '-' + n;
+      en[k] = en[k] || {};
+      en[k].ok = !en[k].ok;
+      all[exId] = en;
+      saveLS(LS_EXAMS, all);
+      render();
+      break;
+    }
     case 'openRef': view = { name: 'ref', param: null }; render(); break;
     case 'backHome': view = { name: 'home', param: null }; currentPaper = null; practice = null; render(); break;
     case 'reveal':
