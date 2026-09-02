@@ -1,5 +1,5 @@
 /* 数一刷题助手 - Service Worker：离线外壳 */
-var CACHE = 's1math-v5';
+var CACHE = 's1math-v6';
 var ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ var ASSETS = [
   './pro-bank-ec.js',
   './pro-bank-ss.js',
   './pro-exams.js',
+  './pro-finals.js',
   './manifest.webmanifest',
   './icons/icon-180.png',
   './icons/icon-192.png',

@@ -186,8 +186,8 @@ var currentPaper = null;
 var practice = null;
 
 function tagHTML(q) {
-  var src = q.t === '真题' ? ('真题' + (q.y || '')) : q.t;
-  var cls = q.t === '真题' ? 'tag-real' : (q.t === '课后题' ? 'tag-ex' : (q.ch === 'doubleint' ? 'tag-ref' : 'tag-mock'));
+  var src = q.t === '真题' ? ('真题' + (q.y || '')) : (q.t === '期末' ? ('期末' + (q.y || '')) : q.t);
+  var cls = q.t === '真题' ? 'tag-real' : (q.t === '课后题' ? 'tag-ex' : (q.t === '期末' ? 'tag-final' : (q.ch === 'doubleint' ? 'tag-ref' : 'tag-mock')));
   return '<span class="tag ' + cls + '">' + esc(src) + '</span>';
 }
 function srcLabel(q) {
@@ -236,6 +236,7 @@ function render() {
   else if (view.name === 'quiz') renderQuiz(v);
   else if (view.name === 'exams') renderExams(v);
   else if (view.name === 'exam') renderExam(v);
+  else if (view.name === 'finals') renderFinals(v);
   updateTabs();
   updateHeader();
   updateBadges();
@@ -244,7 +245,7 @@ function render() {
 }
 
 function updateTabs() {
-  var map = { wrong: 'wrong', review: 'review', quiz: 'review', exams: 'major', exam: 'major' };
+  var map = { wrong: 'wrong', review: 'review', quiz: 'review', exams: 'major', exam: 'major', finals: 'major' };
   var active = map[view.name] || (view.name === 'placeholder' ? view.param : (view.name === 'home' ? (subject === 'pro' ? 'major' : 'math') : 'math'));
   document.querySelectorAll('.tabbar .tab').forEach(function (b) {
     b.classList.toggle('active', b.dataset.tab === active);
@@ -352,6 +353,14 @@ function renderHome(v) {
       rows + '</div>';
   })();
 
+  var finalCard = !isPro ? '' : (function () {
+    var finals = window.PRO_FINALS || [];
+    if (!finals.length) return '';
+    return '<div class="card"><div class="card-title">🎓 西电期末真题卷</div>' +
+      '<p class="hint-text">真实西电本科期末卷（2015–2022），含参考答案与原卷图；适合基础和冲刺期查漏补缺。</p>' +
+      examRowsHTML(finals, 'openFinal') + '</div>';
+  })();
+
   v.innerHTML =
     '<div class="card">' +
       '<div class="card-title row-between"><span>' + title + '</span><button class="icon-btn" id="btnOpenSettings" title="设置">⚙️</button></div>' +
@@ -366,6 +375,7 @@ function renderHome(v) {
     '<div class="card"><div class="card-title">📚 章节题库</div>' + rows + '</div>' +
     refCard +
     examCard +
+    finalCard +
     '<div class="card"><div class="card-title">📜 最近试卷</div>' + histRows + '</div>';
   var st = $('btnOpenSettings');
   if (st) st.onclick = openSettings;
@@ -375,6 +385,8 @@ function renderHome(v) {
 function examById(id) {
   var exams = window.PRO_EXAMS || [];
   for (var i = 0; i < exams.length; i++) if (exams[i].id === id) return exams[i];
+  var finals = window.PRO_FINALS || [];
+  for (var j = 0; j < finals.length; j++) if (finals[j].id === id) return finals[j];
   return null;
 }
 /* 单视频直接 ?p=n；双视频（如 2026）：信号部分在视频①，电路部分在视频②（分P 从 1 起） */
@@ -391,8 +403,9 @@ function proFind(qid) {
   }
   return null;
 }
-function examRowsHTML() {
-  var exams = window.PRO_EXAMS || [];
+function examRowsHTML(srcExams, act) {
+  var exams = srcExams || window.PRO_EXAMS || [];
+  var actName = act || 'openExam';
   var notes = loadLS(LS_EXAMS, {});
   return exams.map(function (e) {
     var ok = 0;
@@ -401,7 +414,7 @@ function examRowsHTML() {
       if (st && st.ok) ok++;
     });
     var pct = Math.round(ok / Math.max(1, (e.items || []).length) * 100);
-    return '<div class="exam-row" data-act="openExam" data-id="' + e.id + '">' +
+    return '<div class="exam-row" data-act="' + actName + '" data-id="' + e.id + '">' +
       '<div class="ch-left"><div class="ch-name">📜 ' + esc(e.title) + '</div>' +
       '<div class="ch-meta">' + (e.items || []).length + ' 张题卡 · ' + (e.video ? '视频逐题讲解' : '真题原题+答案解析') + '</div></div>' +
       '<div class="ch-right"><div class="ch-done">掌握 ' + ok + '/' + (e.items || []).length + '</div>' +
@@ -414,6 +427,12 @@ function renderExams(v) {
   v.innerHTML = '<div class="sub-header"><button class="icon-btn" data-act="backHome">←</button><div class="sh-title">📋 历年真题套卷</div></div>' +
     '<p class="hint-text">真题原文是视频画面，做成题卡：每张卡写自己的作答和思路 → 点视频链接直达对应讲解分P → 会了就打勾。进度自动保存。</p>' +
     '<div class="card">' + examRowsHTML() + '</div>';
+}
+function renderFinals(v) {
+  var finals = window.PRO_FINALS || [];
+  v.innerHTML = '<div class="sub-header"><button class="icon-btn" data-act="backHome">←</button><div class="sh-title">🎓 西电期末真题卷</div></div>' +
+    '<p class="hint-text">真实西电本科期末考试卷（信号与系统 / 电路），含参考答案。题目以题卡呈现，附整页原卷图；先自己做，再点「查看答案」。</p>' +
+    '<div class="card">' + examRowsHTML(finals, 'openFinal') + '</div>';
 }
 function renderExam(v) {
   var exam = examById(view.param);
@@ -447,7 +466,7 @@ function renderExam(v) {
       '<textarea class="exam-note" data-exam="' + exam.id + '" data-n="' + it.n + '" placeholder="写下你的答案 / 思路 / 卡住的地方…">' + esc(st.note || '') + '</textarea>' +
       '</div>';
   }).join('');
-  v.innerHTML = '<div class="sub-header"><button class="icon-btn" data-act="backExams">←</button><div class="sh-title">' + esc(exam.title) + '</div><div class="sh-sub">' + (exam.items || []).length + ' 题</div></div>' +
+  v.innerHTML = '<div class="sub-header"><button class="icon-btn" data-act="' + (exam.kind === 'final' ? 'backFinals' : 'backExams') + '">←</button><div class="sh-title">' + esc(exam.title) + '</div><div class="sh-sub">' + (exam.items || []).length + ' 题</div></div>' +
     '<p class="hint-text">' + esc(exam.note || '') + (exam.video ? ' 找不到对应分P时，点上方整集链接按题号定位。' : '') + '</p>' +
     (top ? '<div class="btn-row">' + top + '</div>' : '') +
     cards;
@@ -473,7 +492,7 @@ function genChapterPaper(chId, seed, done) {
   loadChapterFiles([chId]).then(function () {
     var ch = chapterById(chId);
     var rnd = mulberry32(seed);
-    var pool = byCh(chId);
+    var pool = byCh(chId).filter(function (q) { return q.t !== '期末'; });
     if (!pool.length) {
       toast('「' + ch.name + '」暂无题目');
       return;
@@ -511,7 +530,7 @@ function genFullPaper(seed, done) {
     }
     function partOf(q) { return q.ch.indexOf('ss-') === 0 ? '信号' : '电路'; }
     function pickOne(ch, qt, part) {
-      var pool = byCh(ch.id).filter(function (q) { return q.qt === qt && (!part || partOf(q) === part); });
+      var pool = byCh(ch.id).filter(function (q) { return q.qt === qt && q.t !== '期末' && (!part || partOf(q) === part); });
       if (!pool.length) return null;
       var real = pool.filter(function (q) { return q.t === '真题'; });
       var mock = pool.filter(function (q) { return q.t !== '真题'; });
@@ -521,7 +540,7 @@ function genFullPaper(seed, done) {
     }
     function pickAny(qt, part) {
       var pool = [];
-      acts.forEach(function (c) { byCh(c.id).forEach(function (q) { if (q.qt === qt && (!part || partOf(q) === part)) pool.push(q); }); });
+      acts.forEach(function (c) { byCh(c.id).forEach(function (q) { if (q.qt === qt && q.t !== '期末' && (!part || partOf(q) === part)) pool.push(q); }); });
       if (!pool.length) return null;
       return pool[Math.floor(rnd() * pool.length)];
     }
@@ -1283,7 +1302,9 @@ function handleClick(e) {
     case 'genNew': genPaper(Math.floor(Math.random() * 2147483647)); break;
     case 'openCh': practice = null; view = { name: 'chapter', param: el.dataset.id }; render(); break;
     case 'openExam': view = { name: 'exam', param: el.dataset.id }; render(); break;
+    case 'openFinal': view = { name: 'exam', param: el.dataset.id }; render(); break;
     case 'backExams': view = { name: 'exams', param: null }; render(); break;
+    case 'backFinals': view = { name: 'finals', param: null }; render(); break;
     case 'examMark': {
       var exId = el.dataset.exam, n = el.dataset.n;
       var all = loadLS(LS_EXAMS, {});
