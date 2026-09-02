@@ -296,10 +296,15 @@ function renderHome(v) {
     }
     var total = qids.length;
     var realN = qids.filter(function (q) { return q.t === '真题'; }).length;
-    var mockN = total - realN;
+    var exN = qids.filter(function (q) { return q.t === '课后题'; }).length;
+    var finN = qids.filter(function (q) { return q.t === '期末'; }).length;
     var pct = Math.round(done / Math.max(1, total) * 100);
     var rule = c.rule === 'mixed' ? '真题优先+课后题20%' : '纯真题';
-    var metaRight = total ? ('真题' + realN + ' / ' + (subject === 'pro' ? '课后题' : '模拟') + mockN) : '题目待收录';
+    var metaRight = total
+      ? (subject === 'pro'
+          ? ('真题' + realN + ' · 课后题' + exN + ' · 期末' + finN)
+          : ('真题' + realN + ' / 模拟' + (total - realN)))
+      : '题目待收录';
     return '<div class="ch-row" data-act="openCh" data-id="' + c.id + '">' +
       '<div class="ch-left"><div class="ch-name">' + esc(c.name) + '</div>' +
       '<div class="ch-meta">' + esc(c.area) + ' · ' + c.weight + ' 分 · ' + rule + ' · ' + metaRight + '</div></div>' +
